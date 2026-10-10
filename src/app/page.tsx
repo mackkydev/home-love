@@ -549,14 +549,21 @@ export default function Home() {
   const joinWithCode = async (code: string) => {
     setHouseholdBusy(true);
     setHouseholdError("");
+    let joinedId = "";
     try {
       await flushCurrentHousehold();
-      const id = await joinHousehold(code);
-      await loadHouseholdData(id);
+      joinedId = await joinHousehold(code);
+      await loadHouseholdData(joinedId);
       setInviteCode("");
       setNotice(language === "en" ? "Joined the household" : "เข้าร่วมบ้านแล้ว");
     } catch (error) {
-      setHouseholdError(error instanceof Error ? error.message : "เข้าร่วมบ้านไม่สำเร็จ");
+      if (joinedId) {
+        const list = await withHouseholdTimeout(listHouseholds()).catch(() => null);
+        if (list) setHouseholds(list);
+        setHouseholdError((language === "en" ? "You joined the home, but its data could not load. Select it again to retry: " : "เข้าร่วมบ้านแล้ว แต่โหลดข้อมูลไม่สำเร็จ ลองเลือกบ้านนั้นอีกครั้ง: ") + (error instanceof Error ? error.message : String(error)));
+      } else {
+        setHouseholdError(error instanceof Error ? error.message : "เข้าร่วมบ้านไม่สำเร็จ");
+      }
     } finally {
       switchingHouseholdRef.current = false;
       setHouseholdBusy(false);
