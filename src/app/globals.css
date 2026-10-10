@@ -381,3 +381,72 @@
 [data-theme="dark"] .cloud-auth-card .form-label input{background:#202a40;border-color:#36415c;color:#edf1ff}
 [data-theme="dark"] .cloud-sync-error{background:#422936;color:#ffc4cd}
 [data-theme="dark"] .cloud-import-banner{background:#202d48;color:#d4e4ff}
+
+/* Comfortable reading sizes across the app. */
+body{font-size:16px;line-height:1.5}
+.brand small,.house-details span,.nav-caption,.profile-copy small,.breadcrumb,.sync-status,.eyebrow,.summary-top,.summary-foot,.section-heading p,.category-info small,.entry-meta,.entry-value small,.no-price,.service-progress small,.page-footer,.empty-state p,.local-note,.modal-kicker,.medicine-form-heading small,.medicine-summary,.stock-summary,.stock-toggle small,.stock-preview,.stock-estimate-note,.stock-use-history>small,.alerts-heading small,.alerts-popover li>div small,.detail-history li small,.service-dates span,.item-detail-info p,.cloud-auth-card small{font-size:12px}
+.nav-link,.add-category,.tip-card strong,.tip-card p,.tip-card button,.profile-copy strong,.welcome-row p,.primary-button,.text-button,.category-info strong,.entry-title-line>strong,.entry-value strong,.consume-button,.renew-button,.detail-toggle,.filter-button,.sort-button,.filter-chip,.secondary-button,.danger-button,.category-select-trigger,.date-picker-trigger,.category-select-option,.date-picker-clear,.date-picker-header strong,.calendar-day,.meal-picker legend,.meal-option,.medicine-form-heading strong,.medicine-photo-label,.medicine-photo-button strong,.stock-toggle strong,.stock-fields .form-label,.alerts-heading strong,.alerts-popover li>div strong,.detail-history h4,.detail-history li strong,.service-dates strong,.item-detail-info h4,.cloud-sync-error,.cloud-import-banner{font-size:14px}
+.form-label,.medicine-photo-label,.section-heading h2,.empty-state>strong{font-size:16px}
+.form-label input,.form-label select,.form-label textarea,.category-select-search input,.search-field input{font-size:16px!important}
+.form-label input,.form-label select,.form-label textarea{min-height:45px}
+.category-select-trigger,.date-picker-trigger{min-height:45px;font-size:15px}
+.entry-tag,.category-info small,.medicine-photo-button small,.medicine-photo-label small,.stock-summary,.stock-preview,.stock-estimate-note,.detail-empty,.service-progress small,.progress-bar-labels,.progress-circle-copy small{font-size:12px}
+.category-card{min-height:84px}
+.entry-row{min-height:88px}
+.summary-card{height:auto;min-height:146px}
+.summary-top{font-size:12px}
+.summary-foot{font-size:11px}
+.modal-top h2{font-size:21px}
+.meal-option{min-height:42px}
+.calendar-day{height:38px}
+.calendar-weekdays span{font-size:12px}
+.cloud-auth-card p{font-size:15px}
+.cloud-auth-card .primary-button{font-size:15px;min-height:48px}
+
+@media(max-width:760px){
+  .breadcrumb{font-size:12px}
+  .welcome-row h1{font-size:25px}
+  .welcome-row p,.eyebrow{font-size:13px}
+  .summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .summary-card{min-height:124px;padding:15px}
+  .summary-card:first-child{grid-column:1/-1}
+  .summary-top{font-size:12px}
+  .summary-number{font-size:25px}
+  .summary-number small,.summary-foot{font-size:12px}
+  .section-heading h2{font-size:18px}
+  .section-heading p,.text-button{font-size:13px}
+  .category-card{min-height:84px;padding:12px}
+  .category-info strong{font-size:14px}
+  .category-info small{font-size:12px}
+  .entry-row{display:grid;grid-template-columns:39px minmax(0,1fr) auto;align-items:start;column-gap:10px;row-gap:9px;min-height:0;padding:14px}
+  .entry-icon{grid-column:1;grid-row:1}
+  .entry-main{grid-column:2;grid-row:1}
+  .entry-value{grid-column:3;grid-row:1;width:auto;min-width:55px}
+  .entry-actions{grid-column:2/-1;grid-row:2;width:auto;flex:initial;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;gap:6px}
+  .entry-title-line>strong{font-size:14px}
+  .entry-tag{font-size:11px}
+  .entry-meta,.entry-value small,.no-price,.service-progress small{font-size:12px}
+  .entry-meta{line-height:1.4}
+  .entry-value strong{font-size:14px}
+  .medicine-summary,.stock-summary,.detail-toggle{font-size:12px}
+  .consume-button,.renew-button{width:auto;min-height:34px;height:auto;padding:5px 9px;font-size:12px}
+  .row-icon-button{width:34px;height:34px}
+  .service-progress{flex-wrap:wrap}
+  .progress-track{width:72px}
+  .mobile-nav>button span,.mobile-add b{font-size:12px}
+  .filter-chip,.filter-button,.sort-button{font-size:12px}
+  .search-field input{font-size:16px}
+  .date-field .date-picker-trigger{font-size:12px;min-height:38px}
+  .form-label,.medicine-photo-label{font-size:14px}
+  .modal-top h2{font-size:19px}
+  .meal-option{font-size:12px;min-height:42px}
+  .toast{font-size:13px;white-space:normal;max-width:calc(100vw - 32px)}
+  .service-dates span,.service-dates strong,.detail-history h4,.detail-history li strong,.detail-history li small,.item-detail-info p{font-size:12px}
+}
+
+@media(max-width:380px){
+  .entry-row{grid-template-columns:34px minmax(0,1fr) auto;gap:7px;padding:12px}
+  .entry-icon{width:34px;height:34px}
+  .entry-value{min-width:0}
+  .summary-card{padding:13px}
+}
