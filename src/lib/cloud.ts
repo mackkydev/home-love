@@ -48,6 +48,41 @@ export type CloudSnapshot<T extends CloudEntry> = {
 const assetPaths = new Map<string, string>();
 const bucket = "household-files";
 
+function entryAssetPaths(entry: CloudEntry, householdId: string): string[] {
+  const values = [...(entry.photos ?? []), entry.photo, ...(entry.attachments ?? []).map((file) => file.data)];
+  return values.flatMap((value) => value?.startsWith("storage:") && value.slice(8).startsWith(`${householdId}/`) ? [value.slice(8)] : []);
+}
+
+async function backupAsset(value: string): Promise<string> {
+  if (value.startsWith("data:")) return value;
+  const path = value.startsWith("storage:") ? value.slice(8) : assetPaths.get(value);
+  let file: Blob;
+  if (path) {
+    const { data, error } = await cloud!.storage.from(bucket).download(path);
+    if (error || !data) throw error ?? new Error("Cannot download backup attachment");
+    file = data;
+  } else {
+    const response = await fetch(value);
+    if (!response.ok) throw new Error(`Cannot download backup attachment (${response.status})`);
+    file = await response.blob();
+  }
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function createPortableBackup<T extends CloudEntry>(entries: T[], categories: CloudCategory[], householdName: string) {
+  const portableEntries = await Promise.all(entries.map(async (entry) => {
+    const photos = await Promise.all((entry.photos ?? (entry.photo ? [entry.photo] : [])).map(backupAsset));
+    const attachments = await Promise.all((entry.attachments ?? []).map(async (file) => ({ ...file, data: await backupAsset(file.data) })));
+    return { ...entry, photos, photo: photos[0], attachments };
+  }));
+  return { format: "home-love-backup-v1", exportedAt: new Date().toISOString(), householdName, categories, entries: portableEntries };
+}
+
 async function visibleAsset(path: string) {
   if (!cloud) throw new Error("Supabase is not configured");
   const { data, error } = await cloud.storage.from(bucket).createSignedUrl(path, 3600);
@@ -194,6 +229,13 @@ export async function saveHousehold<T extends CloudEntry>(householdId: string, e
   }
   if (deletedCategories.length) {
     const { error } = await cloud.from("household_categories").delete().eq("household_id", householdId).in("name", deletedCategories);
+    if (error) throw error;
+  }
+  const oldPaths = new Set([...previous.entryVersions.values()].flatMap((version) => entryAssetPaths(JSON.parse(version) as T, householdId)));
+  const retainedPaths = new Set(prepared.flatMap((entry) => entryAssetPaths(entry, householdId)));
+  const orphanedPaths = [...oldPaths].filter((path) => !retainedPaths.has(path));
+  for (let index = 0; index < orphanedPaths.length; index += 100) {
+    const { error } = await cloud.storage.from(bucket).remove(orphanedPaths.slice(index, index + 100));
     if (error) throw error;
   }
   return { entries, categories, entryVersions: nextEntryVersions, categoryVersions: nextCategoryVersions };

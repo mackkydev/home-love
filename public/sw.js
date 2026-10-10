@@ -1,4 +1,4 @@
-const CACHE_NAME = "baanjai-shell-v1";
+const CACHE_NAME = "baanjai-shell-v2";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/icon.svg"];
 const IS_LOCAL_DEV = self.location.hostname === "localhost" || self.location.hostname === "127.0.0.1";
 
