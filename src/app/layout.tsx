@@ -10,10 +10,10 @@ const notoThai = Noto_Sans_Thai({
 });
 
 export const metadata: Metadata = {
-  title: "บ้านใจ | จัดการเรื่องในบ้าน",
+  title: "บ้านของเรา | จัดการเรื่องในบ้าน",
   description: "รวมบันทึกของใช้ ค่าใช้จ่าย และสิทธิ์บริการของครอบครัวไว้ในที่เดียว",
-  applicationName: "บ้านใจ",
-  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "บ้านใจ" },
+  applicationName: "บ้านของเรา",
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "บ้านของเรา" },
   formatDetection: { telephone: false },
   manifest: "/manifest.webmanifest",
 };

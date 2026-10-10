@@ -1,4 +1,4 @@
-# บ้านใจ — Home Organizer
+# บ้านของเรา — Home Organizer
 
 Next.js PWA สำหรับบันทึกข้อมูลในบ้าน ข้อมูลออนไลน์ใช้ Supabase Auth, PostgreSQL และ Storage โดยกำหนดสิทธิ์ด้วย Row Level Security (RLS)
 
@@ -61,3 +61,8 @@ on conflict do nothing;
 - เจ้าของหรือผู้ดูแลสร้างรหัสเชิญแบบใช้ครั้งเดียวได้ สมาชิกเข้าร่วมและสลับบ้านได้ ยังไม่มีหน้าจอเปลี่ยนบทบาทหรือถอดสมาชิก
 - ยังไม่มีระบบ subscription หรือการรับชำระเงิน
 - บันทึกที่ผู้ใช้แก้ไขจะซิงก์หลังจากหยุดพิมพ์สั้น ๆ หากการซิงก์มีปัญหา แอปจะแสดงข้อความผิดพลาด
+# Scheduled phone notifications
+
+Medicine reminders and calendar alerts use Web Push. Configure `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `SUPABASE_SECRET_KEY`, and `NOTIFICATION_CRON_SECRET` in Vercel (see `.env.example`). Generate one VAPID key pair with `web-push generate-vapid-keys`. Keep the private key and cron secret server-side.
+
+Apply `supabase/migrations/20261010_push_notifications.sql` in the Supabase SQL Editor. Create a Vault secret named `push_cron_secret` containing the same value as `NOTIFICATION_CRON_SECRET`, then run `supabase/setup_push_scheduler.sql`. The Supabase scheduler calls the protected Vercel endpoint every minute. Users must install the PWA and allow notifications; on iOS this requires an iOS version with Home Screen Web Push support. The phone controls notification sound and silent mode.

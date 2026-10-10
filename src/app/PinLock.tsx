@@ -27,7 +27,7 @@ export default function PinLock({ language, onUnlock }: { language: "th" | "en";
 
   return <main className="cloud-auth-page pin-lock-page"><section className="cloud-auth-card pin-lock-card">
     <span className="brand-mark" aria-hidden="true">⌂</span>
-    <h1>{en ? "Home Love" : "บ้านใจ"}</h1>
+    <h1>{en ? "Our Home" : "บ้านของเรา"}</h1>
     <h2>{en ? "Unlock this device" : "ปลดล็อกเครื่องนี้"}</h2>
     <p>{en ? "Enter the six-digit PIN set for your account." : "ใส่รหัส 6 หลักที่ตั้งไว้กับบัญชีของคุณ"}</p>
     <form onSubmit={(event) => void unlock(event)}>

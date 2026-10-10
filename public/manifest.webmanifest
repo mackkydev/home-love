@@ -1,13 +1,13 @@
 {
   "id": "/",
-  "name": "บ้านใจ — จัดการเรื่องในบ้าน",
-  "short_name": "บ้านใจ",
+  "name": "บ้านของเรา — จัดการเรื่องในบ้าน",
+  "short_name": "บ้านของเรา",
   "description": "รวมบันทึกของใช้ ค่าใช้จ่าย และสิทธิ์บริการของครอบครัว",
   "lang": "th",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "portrait-primary",
   "background_color": "#3565f6",
   "theme_color": "#3565f6",
   "icons": [

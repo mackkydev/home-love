@@ -157,7 +157,7 @@ export default function SettingsPage({ houses, activeId, inviteCode, busy, error
   const title = section === "account" ? (en ? "Account" : "บัญชีของฉัน") : section === "home" ? (en ? "Family home" : "บ้านและครอบครัว") : section === "pin" ? (en ? "App PIN" : "PIN เข้าแอป") : section === "display" ? (en ? "Display" : "การแสดงผล") : (en ? "Settings" : "ตั้งค่า");
 
   return <div className="settings-page">
-    <header className="settings-page-head">{section !== "menu" && <button type="button" className="settings-back" onClick={() => setSection("menu")} aria-label={en ? "Back" : "ย้อนกลับ"}>‹</button>}<div><span>{en ? "Home Love" : "บ้านใจ"}</span><h1>{title}</h1></div></header>
+    <header className="settings-page-head">{section !== "menu" && <button type="button" className="settings-back" onClick={() => setSection("menu")} aria-label={en ? "Back" : "ย้อนกลับ"}>‹</button>}<div><span>{en ? "Our Home" : "บ้านของเรา"}</span><h1>{title}</h1></div></header>
     {section === "menu" && <div className="settings-menu">
       {userId && <button type="button" onClick={() => setSection("account")}><span className="settings-menu-icon">◉</span><span><strong>{en ? "Account" : "จัดการบัญชี"}</strong><small>{en ? "Password and profile photo" : "รหัสผ่านและรูปโปรไฟล์"}</small></span><b>›</b></button>}
       {userId && <button type="button" onClick={() => setSection("home")}><span className="settings-menu-icon">⌂</span><span><strong>{en ? "Family home" : "บ้านและครอบครัว"}</strong><small>{en ? "Switch, invite, or join a home" : "สลับบ้าน เชิญ และเข้าร่วมบ้าน"}</small></span><b>›</b></button>}

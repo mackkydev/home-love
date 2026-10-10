@@ -93,7 +93,7 @@ export default function CloudAuth({
 
   return <main className="cloud-auth-page"><section className="cloud-auth-card">
     <span className="brand-mark" aria-hidden="true">⌂</span>
-    <h1>{en ? "Home Love" : "บ้านใจ"}</h1>
+    <h1>{en ? "Our Home" : "บ้านของเรา"}</h1>
     <p>{en ? "Keep your household records together, privately." : "บันทึกเรื่องในบ้านร่วมกันอย่างเป็นส่วนตัว"}</p>
     {checking && !recoveryMode ? <><p>{en ? "Connecting to your household..." : "กำลังเชื่อมต่อข้อมูลของบ้าน..."}</p>{cloudError && <p className="cloud-error" role="alert">{cloudError}</p>}{cloudError && <button type="button" className="secondary-button" onClick={() => void cloud?.auth.signOut()}>{en ? "Sign out" : "ออกจากระบบ"}</button>}</> : <>
       <h2>{recoveryMode ? (en ? "Set a new password" : "ตั้งรหัสผ่านใหม่") : mode === "signup" ? (en ? "Register with password" : "สมัครด้วยรหัสผ่าน") : mode === "magic" ? signupOpen ? (en ? "Continue with email link" : "เข้าใช้ด้วยลิงก์อีเมล") : (en ? "Sign in with email link" : "เข้าสู่ระบบด้วยลิงก์อีเมล") : mode === "forgot" ? (en ? "Reset your password" : "ตั้งรหัสผ่านใหม่") : (en ? "Sign in" : "เข้าสู่ระบบ")}</h2>
