@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { cloud, cloudEnabled, openHousehold, saveHousehold, type CloudSnapshot } from "@/lib/cloud";
 
 type Tab = "home" | "items" | "services" | "history";
 type AppTheme = "light" | "dark" | "system";
@@ -112,6 +113,18 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>("home");
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
   const [ready, setReady] = useState(false);
+  const [authStatus, setAuthStatus] = useState<"checking" | "signed-out" | "signed-in">(cloudEnabled ? "checking" : "signed-in");
+  const [authEmail, setAuthEmail] = useState("");
+  const [emailSent, setEmailSent] = useState(false);
+  const [cloudReady, setCloudReady] = useState(false);
+  const [cloudError, setCloudError] = useState("");
+  const [cloudSaving, setCloudSaving] = useState(false);
+  const [syncRevision, setSyncRevision] = useState(0);
+  const [pendingLocalImport, setPendingLocalImport] = useState<{ entries: Entry[]; categories: { name: string; icon: string; color: string }[] } | null>(null);
+  const [householdId, setHouseholdId] = useState("");
+  const cloudSnapshot = useRef<CloudSnapshot<Entry> | null>(null);
+  const cloudQueue = useRef<Promise<void>>(Promise.resolve());
+  const loadedUser = useRef("");
   const [todayValue, setTodayValue] = useState("2026-10-09");
   const [modal, setModal] = useState<"item" | "service" | "note" | "category" | "edit" | "renew" | null>(null);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
@@ -155,8 +168,62 @@ export default function Home() {
   useEffect(() => { const media = window.matchMedia("(prefers-color-scheme: dark)"); const updateSystemTheme = () => setSystemDark(media.matches); updateSystemTheme(); media.addEventListener("change", updateSystemTheme); return () => media.removeEventListener("change", updateSystemTheme); }, []);
   useEffect(() => { const root = document.documentElement; root.dataset.theme = theme === "system" ? (systemDark ? "dark" : "light") : theme; root.dataset.accent = accent; root.dataset.palette = paletteMode; root.lang = language === "th" ? "th" : "en"; if (accent === "custom") { root.style.setProperty("--blue", customColor); root.style.setProperty("--blue-dark", adjustHex(customColor, -35)); } else { root.style.removeProperty("--blue"); root.style.removeProperty("--blue-dark"); } if (ready) { localStorage.setItem("baanjai-theme", theme); localStorage.setItem("baanjai-accent", accent); localStorage.setItem("baanjai-palette", paletteMode); localStorage.setItem("baanjai-custom-color", customColor); localStorage.setItem("baanjai-language", language); } }, [theme, systemDark, accent, paletteMode, customColor, language, ready]);
   useEffect(() => { if ("Notification" in window) setNotificationPermission(Notification.permission); else setNotificationPermission("unsupported"); const timer = setInterval(() => setTodayValue(today()), 60_000); return () => clearInterval(timer); }, []);
-  useEffect(() => { if (!ready) return; try { localStorage.setItem("baanjai-entries-v1", JSON.stringify(entries)); } catch { setNotice("พื้นที่บันทึกรูปเต็ม กรุณาสำรองข้อมูลหรือลบรูปเก่าก่อน"); } }, [entries, ready]);
-  useEffect(() => { if (ready) localStorage.setItem("baanjai-categories-v1", JSON.stringify(extraCategories)); }, [extraCategories, ready]);
+  useEffect(() => { if (!ready || cloudEnabled) return; try { localStorage.setItem("baanjai-entries-v1", JSON.stringify(entries)); } catch { setNotice("พื้นที่บันทึกรูปเต็ม กรุณาสำรองข้อมูลหรือลบรูปเก่าก่อน"); } }, [entries, ready]);
+  useEffect(() => { if (ready && !cloudEnabled) localStorage.setItem("baanjai-categories-v1", JSON.stringify(extraCategories)); }, [extraCategories, ready]);
+  useEffect(() => {
+    if (!cloud) return;
+    let active = true;
+    const load = async () => {
+      try {
+        setCloudReady(false);
+        setCloudError("");
+        const { householdId: id, snapshot } = await openHousehold<Entry>();
+        if (!active) return;
+        cloudSnapshot.current = snapshot;
+        setHouseholdId(id);
+        const savedEntries = localStorage.getItem("baanjai-entries-v1");
+        const savedCategories = localStorage.getItem("baanjai-categories-v1");
+        let localEntries: Entry[] = [];
+        let localCategories: { name: string; icon: string; color: string }[] = [];
+        try { if (savedEntries) localEntries = JSON.parse(savedEntries) as Entry[]; } catch { /* Keep cloud data available if an old backup is invalid. */ }
+        try { if (savedCategories) localCategories = JSON.parse(savedCategories) as { name: string; icon: string; color: string }[]; } catch { /* Keep cloud data available if an old backup is invalid. */ }
+        const hasRealLocalData = JSON.stringify(localEntries) !== JSON.stringify(initialEntries);
+        setPendingLocalImport(snapshot.entries.length === 0 && hasRealLocalData && localEntries.length > 0 ? { entries: localEntries, categories: localCategories } : null);
+        setEntries(snapshot.entries.sort((a, b) => b.date.localeCompare(a.date)));
+        setExtraCategories(snapshot.categories);
+        setCloudReady(true);
+      } catch (error) {
+        if (active) setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ");
+      }
+    };
+    const { data } = cloud.auth.onAuthStateChange((event, session) => {
+      if (!active) return;
+      setAuthStatus(session ? "signed-in" : "signed-out");
+      if (session && loadedUser.current !== session.user.id) { loadedUser.current = session.user.id; setTimeout(() => { if (active) void load(); }, 0); }
+      if (!session) { loadedUser.current = ""; setCloudReady(false); setHouseholdId(""); setPendingLocalImport(null); cloudSnapshot.current = null; }
+    });
+    return () => { active = false; data.subscription.unsubscribe(); };
+  }, []);
+  useEffect(() => {
+    if (!cloudReady || !householdId || !cloudSnapshot.current) return;
+    const timer = setTimeout(() => {
+      const currentEntries = entries;
+      const currentCategories = extraCategories;
+      cloudQueue.current = cloudQueue.current.catch(() => undefined).then(async () => {
+        if (!cloudSnapshot.current) return;
+        try {
+          setCloudSaving(true);
+          cloudSnapshot.current = await saveHousehold(householdId, currentEntries, currentCategories, cloudSnapshot.current);
+          setCloudError("");
+        } catch (error) {
+          setCloudError(error instanceof Error ? error.message : "บันทึกข้อมูลออนไลน์ไม่สำเร็จ");
+        } finally {
+          setCloudSaving(false);
+        }
+      });
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [entries, extraCategories, cloudReady, householdId, syncRevision]);
   useEffect(() => {
     if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
     if (process.env.NODE_ENV !== "production") {
@@ -272,6 +339,19 @@ export default function Home() {
   const navItems: { id: Tab; label: string; icon: string }[] = [{ id: "home", label: copy.home, icon: "home" }, { id: "items", label: copy.items, icon: "bag" }, { id: "services", label: copy.services, icon: "ticket" }, { id: "history", label: copy.history, icon: "clock" }];
   const displayEntries = tab === "services" ? filteredEntries.filter((entry) => entry.kind === "service") : tab === "items" ? filteredEntries.filter((entry) => entry.kind === "item") : tab === "history" ? filteredEntries : [];
 
+  if (cloudEnabled && (!cloudReady || authStatus !== "signed-in")) return <main className="cloud-auth-page"><section className="cloud-auth-card">
+    <span className="brand-mark"><Icon name="home" size={23}/></span>
+    <h1>บ้านใจ</h1><p>บันทึกเรื่องในบ้านร่วมกันอย่างเป็นส่วนตัว</p>
+    {authStatus === "signed-out" ? <form onSubmit={async (event) => {
+      event.preventDefault();
+      if (!cloud || !authEmail.trim()) return;
+      const { error } = await cloud.auth.signInWithOtp({ email: authEmail.trim(), options: { emailRedirectTo: window.location.origin } });
+      if (error) setCloudError(error.message); else { setCloudError(""); setEmailSent(true); }
+    }}><label className="form-label">อีเมล<input type="email" autoComplete="email" required placeholder="you@example.com" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)}/></label><button className="primary-button" type="submit">ส่งลิงก์เข้าสู่ระบบ</button>{emailSent && <p className="cloud-auth-success">ส่งลิงก์แล้ว กรุณาเปิดอีเมลเพื่อเข้าสู่ระบบ</p>}</form> : <p>กำลังเชื่อมต่อข้อมูลครอบครัว...</p>}
+    {cloudError && <p className="cloud-error" role="alert">{cloudError}</p>}
+    <small>ข้อมูลของแต่ละครอบครัวถูกแยกตามบัญชีที่เข้าสู่ระบบ</small>
+  </section></main>;
+
   return <main className="app-shell">
     <aside className="sidebar">
       <a className="brand" href="#home" onClick={() => setTab("home")}><span className="brand-mark"><Icon name="home" size={21}/></span><span><strong>บ้านใจ</strong><small>HOME ORGANIZER</small></span></a>
@@ -281,11 +361,13 @@ export default function Home() {
       <span className="nav-caption category-caption">{copy.categories}</span>
       <nav className="side-nav category-nav">{[...categories.slice(1), ...extraCategories].map((item) => <button key={item.name} className={`nav-link ${category === item.name ? "active" : ""}`} onClick={() => { setCategory(category === item.name ? "ทั้งหมด" : item.name); setTab("items"); }}><span className={`category-dot ${item.color}`}></span><span>{categoryLabel(item.name, language)}</span></button>)}<button className="add-category" onClick={() => { setForm({ ...form, name: "" }); setModal("category"); }}><span>＋</span> {ui("เพิ่มหมวดหมู่", "Add category")}</button></nav>
       <div className="sidebar-spacer"/><div className="tip-card"><span className="tip-icon"><Icon name="shield" size={17}/></span><strong>{ui("ข้อมูลอยู่ในเครื่องนี้", "Data stays on this device")}</strong><p>{ui("อย่าลืมสำรองข้อมูลไว้ เผื่อเปลี่ยนเครื่องนะ", "Back up your records before changing devices.")}</p><button onClick={exportData}>{ui("สำรองข้อมูล", "Back up data")} <Icon name="arrow" size={14}/></button></div>
-      <button className="profile-row"><span className="avatar">ค</span><span className="profile-copy"><strong>{ui("คุณ", "You")}</strong><small>{ui("สมาชิกครอบครัว", "Family member")}</small></span><Icon name="dots" size={18}/></button>
+      <button className="profile-row" onClick={() => { if (cloud) void cloud.auth.signOut(); }}><span className="avatar">ค</span><span className="profile-copy"><strong>{ui("คุณ", "You")}</strong><small>{cloudEnabled ? ui("ออกจากระบบ", "Sign out") : ui("สมาชิกครอบครัว", "Family member")}</small></span><Icon name="dots" size={18}/></button>
     </aside>
 
     <section className="main-column" id="home">
-      <header className="topbar"><div className="breadcrumb">{ui("บ้านของเรา", "Our home")} <Icon name="chevron" size={15}/><strong>{navItems.find((item) => item.id === tab)?.label}</strong></div><div className="top-actions"><span className="sync-status"><i/> {copy.synced}</span><button className="icon-button preferences-button" type="button" aria-label={copy.preferences} aria-expanded={showPreferences} onClick={() => setShowPreferences((value) => !value)}><Icon name="dots"/></button><button className="icon-button notification-button" aria-label={ui(`การแจ้งเตือน ${stockAlerts.length} รายการใกล้หมด`, `${stockAlerts.length} low-stock alerts`)} aria-expanded={showAlerts} onClick={() => setShowAlerts((value) => !value)}><Icon name="bell"/>{stockAlerts.length > 0 && <span className="notification-count">{stockAlerts.length}</span>}</button><button className="avatar top-avatar" aria-label={ui("โปรไฟล์", "Profile")}>ค</button></div></header>
+      <header className="topbar"><div className="breadcrumb">{ui("บ้านของเรา", "Our home")} <Icon name="chevron" size={15}/><strong>{navItems.find((item) => item.id === tab)?.label}</strong></div><div className="top-actions"><span className="sync-status"><i/> {cloudEnabled ? cloudError ? ui("ซิงก์มีปัญหา", "Sync issue") : cloudSaving ? ui("กำลังบันทึกออนไลน์", "Saving online") : ui("บันทึกออนไลน์", "Saved online") : copy.synced}</span><button className="icon-button preferences-button" type="button" aria-label={copy.preferences} aria-expanded={showPreferences} onClick={() => setShowPreferences((value) => !value)}><Icon name="dots"/></button><button className="icon-button notification-button" aria-label={ui(`การแจ้งเตือน ${stockAlerts.length} รายการใกล้หมด`, `${stockAlerts.length} low-stock alerts`)} aria-expanded={showAlerts} onClick={() => setShowAlerts((value) => !value)}><Icon name="bell"/>{stockAlerts.length > 0 && <span className="notification-count">{stockAlerts.length}</span>}</button><button className="avatar top-avatar" aria-label={ui("โปรไฟล์", "Profile")}>ค</button></div></header>
+      {cloudError && <div className="cloud-sync-error" role="alert">{ui("บันทึกออนไลน์ไม่สำเร็จ", "Online save failed")}: {cloudError} <button type="button" onClick={() => setSyncRevision((value) => value + 1)}>{ui("ลองอีกครั้ง", "Retry")}</button></div>}
+      {pendingLocalImport && <div className="cloud-import-banner"><span>{ui(`พบบันทึกเดิม ${pendingLocalImport.entries.length} รายการในเครื่องนี้`, `Found ${pendingLocalImport.entries.length} local records on this device`)}</span><button type="button" onClick={() => { setEntries(pendingLocalImport.entries); setExtraCategories(pendingLocalImport.categories); setPendingLocalImport(null); setNotice(ui("กำลังนำข้อมูลเดิมเข้าบัญชี", "Importing local records")); }}>{ui("นำเข้าบัญชี", "Import")}</button><button type="button" onClick={() => setPendingLocalImport(null)}>{ui("ภายหลัง", "Later")}</button></div>}
       {showPreferences && <section className="preferences-popover" aria-label={copy.preferences}><div className="preferences-heading"><strong>{copy.preferences}</strong><button type="button" aria-label={copy.close} onClick={() => setShowPreferences(false)}><Icon name="close" size={16}/></button></div><div className="preference-group"><span>{copy.appearance}</span><div className="theme-options appearance-options"><button type="button" className={theme === "light" ? "selected" : ""} onClick={() => setTheme("light")}>☀ {copy.light}</button><button type="button" className={theme === "dark" ? "selected" : ""} onClick={() => setTheme("dark")}>☾ {copy.dark}</button><button type="button" className={theme === "system" ? "selected" : ""} onClick={() => setTheme("system")}>◐ {language === "en" ? "System" : "ตามระบบ"}</button></div></div><div className="preference-group"><span>{language === "en" ? "Color style" : "รูปแบบโทนสี"}</span><div className="theme-options"><button type="button" className={paletteMode === "normal" ? "selected" : ""} onClick={() => setPaletteMode("normal")}>{language === "en" ? "Normal" : "ปกติ"}</button><button type="button" className={paletteMode === "pastel" ? "selected" : ""} onClick={() => setPaletteMode("pastel")}>{language === "en" ? "Pastel" : "พาสเทล"}</button></div></div><div className="preference-group"><span>{copy.color}</span><div className="accent-options">{(["blue", "violet", "green", "rose", "pink", "gray", "gold"] as Accent[]).map((color) => <button type="button" key={color} className={`${color} ${accent === color ? "selected" : ""}`} onClick={() => setAccent(color)} aria-label={color}/>)}</div></div><div className="preference-group custom-color-group"><span>{language === "en" ? "Custom color" : "เลือกสีเอง"}</span><label><input type="color" value={customColor} onChange={(event) => { setCustomColor(event.target.value); setAccent("custom"); }}/><i style={{ background: customColor }}/><strong>{customColor.toUpperCase()}</strong></label></div><div className="preference-group"><span>{copy.language}</span><div className="theme-options"><button type="button" className={language === "th" ? "selected" : ""} onClick={() => setLanguage("th")}>ไทย</button><button type="button" className={language === "en" ? "selected" : ""} onClick={() => setLanguage("en")}>English</button></div></div></section>}
       {showAlerts && <section className="alerts-popover" aria-label="รายการแจ้งเตือน"><div className="alerts-heading"><div><strong>รายการใกล้หมด</strong><small>ตามจำนวนที่ใช้ต่อวันและวันที่ตั้งเตือน</small></div><button type="button" aria-label="ปิดการแจ้งเตือน" onClick={() => setShowAlerts(false)}><Icon name="close" size={16}/></button></div>{stockAlerts.length ? <ul>{stockAlerts.map(({ entry, days, quantity }) => <li key={entry.id}><span className="alert-dot"/><div><strong>{entry.name}</strong><small>เหลือประมาณ {currency(quantity)} {entry.stock?.unit} · {stockRunoutLabel(days)}</small></div><button type="button" onClick={() => { setTab("items"); setCategory(entry.category); setShowAlerts(false); }}>ดู</button></li>)}</ul> : <p className="alerts-empty">ยังไม่มีรายการที่ใกล้หมด</p>}{notificationPermission === "default" && <button className="enable-notifications" type="button" onClick={() => { if ("Notification" in window) void Notification.requestPermission().then(setNotificationPermission); }}>เปิดการแจ้งเตือนบนอุปกรณ์</button>}{notificationPermission === "denied" && <p className="notification-help">การแจ้งเตือนถูกปิดไว้ เปิดสิทธิ์ได้ในการตั้งค่าเว็บไซต์</p>}{notificationPermission === "unsupported" && <p className="notification-help">เบราว์เซอร์นี้ไม่รองรับการแจ้งเตือน</p>}</section>}
 

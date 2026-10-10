@@ -1,0 +1,141 @@
+import { createClient } from "@supabase/supabase-js";
+
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+export const cloudEnabled = Boolean(url && key);
+export const cloud = url && key ? createClient(url, key, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+}) : null;
+
+export type CloudCategory = { name: string; icon: string; color: string };
+export type CloudEntry = {
+  id: string;
+  photos?: string[];
+  photo?: string;
+  attachments?: { name: string; data: string; type: string }[];
+};
+
+export type CloudSnapshot<T extends CloudEntry> = {
+  entries: T[];
+  categories: CloudCategory[];
+  entryVersions: Map<string, string>;
+  categoryVersions: Map<string, string>;
+};
+
+const assetPaths = new Map<string, string>();
+const bucket = "household-files";
+
+async function visibleAsset(path: string) {
+  if (!cloud) throw new Error("Supabase is not configured");
+  const { data, error } = await cloud.storage.from(bucket).createSignedUrl(path, 3600);
+  if (error || !data?.signedUrl) throw error ?? new Error("Cannot open attachment");
+  assetPaths.set(data.signedUrl, path);
+  return data.signedUrl;
+}
+
+async function storedAsset(value: string, pathPrefix: string, fileName: string, mimeType: string) {
+  if (!cloud) throw new Error("Supabase is not configured");
+  if (value.startsWith("storage:")) return value.slice(8);
+  const knownPath = assetPaths.get(value);
+  if (knownPath) return knownPath;
+  if (!value.startsWith("data:")) throw new Error("Unknown attachment source");
+  const blob = await (await fetch(value)).blob();
+  if (blob.size > 1024 * 1024) throw new Error("ไฟล์แนบใหญ่เกิน 1 MB");
+  const extension = mimeType === "application/pdf" ? "pdf" : "jpg";
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-40) || `file.${extension}`;
+  const path = `${pathPrefix}/${crypto.randomUUID()}-${safeName}`;
+  const { error } = await cloud.storage.from(bucket).upload(path, blob, { contentType: mimeType, upsert: false });
+  if (error) throw error;
+  assetPaths.set(value, path);
+  return path;
+}
+
+async function prepareEntry<T extends CloudEntry>(entry: T, householdId: string): Promise<T> {
+  const data = { ...entry };
+  const prefix = `${householdId}/${entry.id}`;
+  if (entry.photos?.length) {
+    data.photos = await Promise.all(entry.photos.map(async (photo, index) => `storage:${await storedAsset(photo, prefix, `photo-${index}.jpg`, "image/jpeg")}`));
+    data.photo = data.photos[0];
+  } else if (entry.photo) {
+    data.photo = `storage:${await storedAsset(entry.photo, prefix, "photo-0.jpg", "image/jpeg")}`;
+    data.photos = [data.photo];
+  }
+  if (entry.attachments?.length) {
+    data.attachments = await Promise.all(entry.attachments.map(async (file) => ({
+      name: file.name,
+      type: file.type,
+      data: `storage:${await storedAsset(file.data, prefix, file.name, file.type)}`,
+    })));
+  }
+  return data;
+}
+
+async function displayEntry<T extends CloudEntry>(entry: T): Promise<T> {
+  const data = { ...entry };
+  if (entry.photos?.length) {
+    data.photos = await Promise.all(entry.photos.map((photo) => photo.startsWith("storage:") ? visibleAsset(photo.slice(8)) : Promise.resolve(photo)));
+    data.photo = data.photos[0];
+  } else if (entry.photo?.startsWith("storage:")) {
+    data.photo = await visibleAsset(entry.photo.slice(8));
+    data.photos = [data.photo];
+  }
+  if (entry.attachments?.length) {
+    data.attachments = await Promise.all(entry.attachments.map(async (file) => ({
+      ...file,
+      data: file.data.startsWith("storage:") ? await visibleAsset(file.data.slice(8)) : file.data,
+    })));
+  }
+  return data;
+}
+
+export async function openHousehold<T extends CloudEntry>(): Promise<{ householdId: string; snapshot: CloudSnapshot<T> }> {
+  if (!cloud) throw new Error("Supabase is not configured");
+  const { data: householdId, error: householdError } = await cloud.rpc("ensure_personal_household");
+  if (householdError || !householdId) throw householdError ?? new Error("Cannot create household");
+  const [entriesResult, categoriesResult] = await Promise.all([
+    cloud.from("entries").select("id,data").eq("household_id", householdId),
+    cloud.from("household_categories").select("name,icon,color").eq("household_id", householdId),
+  ]);
+  if (entriesResult.error) throw entriesResult.error;
+  if (categoriesResult.error) throw categoriesResult.error;
+  const rawEntries = (entriesResult.data ?? []).map((row) => row.data as T);
+  return {
+    householdId,
+    snapshot: {
+      entries: await Promise.all(rawEntries.map(displayEntry)),
+      categories: (categoriesResult.data ?? []) as CloudCategory[],
+      entryVersions: new Map(rawEntries.map((entry) => [entry.id, JSON.stringify(entry)])),
+      categoryVersions: new Map((categoriesResult.data ?? []).map((item) => [item.name, JSON.stringify({ name: item.name, icon: item.icon, color: item.color })])),
+    },
+  };
+}
+
+export async function saveHousehold<T extends CloudEntry>(householdId: string, entries: T[], categories: CloudCategory[], previous: CloudSnapshot<T>): Promise<CloudSnapshot<T>> {
+  if (!cloud) throw new Error("Supabase is not configured");
+  const prepared = await Promise.all(entries.map((entry) => prepareEntry(entry, householdId)));
+  const nextEntryVersions = new Map(prepared.map((entry) => [entry.id, JSON.stringify(entry)]));
+  const nextCategoryVersions = new Map(categories.map((item) => [item.name, JSON.stringify(item)]));
+  const changed = prepared.filter((entry) => previous.entryVersions.get(entry.id) !== nextEntryVersions.get(entry.id));
+  const deleted = [...previous.entryVersions.keys()].filter((id) => !nextEntryVersions.has(id));
+  const changedCategories = categories.filter((item) => previous.categoryVersions.get(item.name) !== nextCategoryVersions.get(item.name));
+  const deletedCategories = [...previous.categoryVersions.keys()].filter((name) => !nextCategoryVersions.has(name));
+
+  if (changed.length) {
+    const { error } = await cloud.from("entries").upsert(changed.map((data) => ({ id: data.id, household_id: householdId, data, updated_at: new Date().toISOString() })), { onConflict: "id" });
+    if (error) throw error;
+  }
+  if (deleted.length) {
+    const { error } = await cloud.from("entries").delete().eq("household_id", householdId).in("id", deleted);
+    if (error) throw error;
+  }
+  if (changedCategories.length) {
+    const { error } = await cloud.from("household_categories").upsert(changedCategories.map((item) => ({ ...item, household_id: householdId })), { onConflict: "household_id,name" });
+    if (error) throw error;
+  }
+  if (deletedCategories.length) {
+    const { error } = await cloud.from("household_categories").delete().eq("household_id", householdId).in("name", deletedCategories);
+    if (error) throw error;
+  }
+  return { entries, categories, entryVersions: nextEntryVersions, categoryVersions: nextCategoryVersions };
+}
