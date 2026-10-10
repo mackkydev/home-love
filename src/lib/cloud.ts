@@ -66,6 +66,38 @@ export async function setDevicePin(pin: string, currentPin?: string): Promise<bo
   return data === true;
 }
 
+const profileBucket = "profile-photos";
+
+export async function getProfilePhotoUrl(userId: string): Promise<string> {
+  if (!cloud || !userId) return "";
+  const { data: userData, error: userError } = await cloud.auth.getUser();
+  if (userError || userData.user?.id !== userId) return "";
+  const path = userData.user.user_metadata?.profile_photo_path;
+  if (typeof path !== "string" || !path.startsWith(`${userId}/`)) return "";
+  const { data, error } = await cloud.storage.from(profileBucket).createSignedUrl(path, 86400);
+  if (error || !data?.signedUrl) return "";
+  return `${data.signedUrl}&v=${Date.now()}`;
+}
+
+export async function replaceProfilePhoto(userId: string, photo: Blob): Promise<string> {
+  if (!cloud || photo.size > 1024 * 1024 || photo.type !== "image/jpeg") throw new Error("Profile photo must be a JPEG under 1 MB");
+  const { data: userData, error: userError } = await cloud.auth.getUser();
+  if (userError || userData.user?.id !== userId) throw userError ?? new Error("Please sign in again");
+  const oldPath = userData.user.user_metadata?.profile_photo_path;
+  const path = `${userId}/avatar.jpg`;
+  const { error: uploadError } = await cloud.storage.from(profileBucket).upload(path, photo, { contentType: "image/jpeg", upsert: true, cacheControl: "0" });
+  if (uploadError) throw uploadError;
+  if (oldPath !== path) {
+    const { error: updateError } = await cloud.auth.updateUser({ data: { profile_photo_path: path } });
+    if (updateError) throw updateError;
+    if (typeof oldPath === "string" && oldPath.startsWith(`${userId}/`)) {
+      const { error: deleteError } = await cloud.storage.from(profileBucket).remove([oldPath]);
+      if (deleteError) throw deleteError;
+    }
+  }
+  return getProfilePhotoUrl(userId);
+}
+
 export type CloudCategory = { name: string; icon: string; color: string };
 export type Household = { id: string; name: string; role: "owner" | "admin" | "member" };
 export type CloudEntry = {

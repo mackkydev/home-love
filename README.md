@@ -14,7 +14,7 @@ npm run dev
 ## ตั้งค่า Supabase
 
 1. สร้าง Supabase project และเปิด SQL Editor
-2. รัน [migration หลัก](supabase/migrations/20261010000000_initial.sql) เพื่อสร้างตาราง, RLS และ Storage bucket แบบส่วนตัว จากนั้นรัน [migration รหัสเชิญ](supabase/migrations/20261010010000_household_invites.sql), [migration ผู้ดูแลระบบ](supabase/migrations/20261010020000_admin_signup_control.sql), [migration วิธีสมัคร](supabase/migrations/20261010030000_signup_methods.sql) และ [migration รหัสปลดล็อกเครื่อง](supabase/migrations/20261010040000_device_pin.sql) ตามลำดับ
+2. รัน [migration หลัก](supabase/migrations/20261010000000_initial.sql) เพื่อสร้างตาราง, RLS และ Storage bucket แบบส่วนตัว จากนั้นรัน [migration รหัสเชิญ](supabase/migrations/20261010010000_household_invites.sql), [migration ผู้ดูแลระบบ](supabase/migrations/20261010020000_admin_signup_control.sql), [migration วิธีสมัคร](supabase/migrations/20261010030000_signup_methods.sql), [migration รหัสปลดล็อกเครื่อง](supabase/migrations/20261010040000_device_pin.sql) และ [migration รูปโปรไฟล์](supabase/migrations/20261010050000_profile_photos.sql) ตามลำดับ
 3. ใน Authentication > URL Configuration ตั้ง Site URL เป็น URL ของเว็บบน Vercel และเพิ่ม `http://localhost:3001` ใน Redirect URLs สำหรับการพัฒนา (เพิ่มพอร์ตที่ใช้งานจริงด้วย)
 4. เปิด Email provider ใน Authentication เพื่อใช้สมัครสมาชิกและเข้าสู่ระบบด้วยอีเมล/รหัสผ่าน โปรเจกต์ Supabase ปกติจะให้ยืนยันอีเมลเมื่อสมัครใหม่
 5. คัดลอก `.env.example` เป็น `.env.local` แล้วกรอก Project URL และ publishable key หรือ anon key (ไม่ใช้ service role key ใน frontend)
