@@ -196,6 +196,8 @@
 .stock-fields .form-label input,.stock-fields .form-label select{font-size:10px}
 .stock-preview{margin:0;padding:9px 10px;border-radius:8px;background:#f1f5ff;color:#6d7895;font-size:9px;line-height:1.6}
 .stock-preview strong{color:#3864df}
+.auto-use-toggle{margin-top:14px;padding-top:14px;border-top:1px solid #edf0f7}
+.filter-chip:has(svg){display:inline-flex;align-items:center;gap:6px}
 .stock-summary{display:flex;align-items:flex-start;gap:5px;margin:6px 0 0;color:#6573a0;font-size:9px;line-height:1.5}
 .stock-summary svg{flex:none;margin-top:1px;color:#7187d8}
 .stock-summary.near-empty{color:#d18440}
