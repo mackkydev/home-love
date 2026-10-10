@@ -138,6 +138,7 @@ export default function Home() {
   const activeHouseholdRef = useRef("");
   const switchingHouseholdRef = useRef(false);
   const loadedUser = useRef("");
+  const mediaPickerOpen = useRef(false);
   const [todayValue, setTodayValue] = useState("2026-10-09");
   const [modal, setModal] = useState<"item" | "service" | "note" | "category" | "edit" | "renew" | null>(null);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
@@ -228,10 +229,14 @@ export default function Home() {
     return () => { active = false; data.subscription.unsubscribe(); };
   }, [loadHouseholdData]);
   useEffect(() => {
-    let hiddenAt = 0;
+    let wasHidden = false;
     const onVisibility = () => {
-      if (document.visibilityState === "hidden") hiddenAt = Date.now();
-      else if (hiddenAt && Date.now() - hiddenAt > 30_000 && loadedUser.current && localStorage.getItem(`baanjai-pin-device-${loadedUser.current}`) === "enabled") setDeviceLocked(true);
+      if (document.visibilityState === "hidden") wasHidden = true;
+      else {
+        if (mediaPickerOpen.current) mediaPickerOpen.current = false;
+        else if (wasHidden && loadedUser.current && localStorage.getItem(`baanjai-pin-device-${loadedUser.current}`) === "enabled") setDeviceLocked(true);
+        wasHidden = false;
+      }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
@@ -487,7 +492,7 @@ export default function Home() {
       {showAlerts && <section className="alerts-popover" aria-label="รายการแจ้งเตือน"><div className="alerts-heading"><div><strong>รายการใกล้หมด</strong><small>ตามจำนวนที่ใช้ต่อวันและวันที่ตั้งเตือน</small></div><button type="button" aria-label="ปิดการแจ้งเตือน" onClick={() => setShowAlerts(false)}><Icon name="close" size={16}/></button></div>{stockAlerts.length ? <ul>{stockAlerts.map(({ entry, days, quantity }) => <li key={entry.id}><span className="alert-dot"/><div><strong>{entry.name}</strong><small>เหลือประมาณ {currency(quantity)} {entry.stock?.unit} · {stockRunoutLabel(days)}</small></div><button type="button" onClick={() => { setTab("items"); setCategory(entry.category); setShowAlerts(false); }}>ดู</button></li>)}</ul> : <p className="alerts-empty">ยังไม่มีรายการที่ใกล้หมด</p>}{notificationPermission === "default" && <button className="enable-notifications" type="button" onClick={() => { if ("Notification" in window) void Notification.requestPermission().then(setNotificationPermission); }}>เปิดการแจ้งเตือนบนอุปกรณ์</button>}{notificationPermission === "denied" && <p className="notification-help">การแจ้งเตือนถูกปิดไว้ เปิดสิทธิ์ได้ในการตั้งค่าเว็บไซต์</p>}{notificationPermission === "unsupported" && <p className="notification-help">เบราว์เซอร์นี้ไม่รองรับการแจ้งเตือน</p>}</section>}
 
       <div className="content-area">
-        {tab === "settings" ? <SettingsPage houses={households} activeId={householdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} displaySettings={displaySettings} onPhotoChanged={setProfilePhotoUrl} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => { if (cloud) void cloud.auth.signOut(); }}/> : <>
+        {tab === "settings" ? <SettingsPage houses={households} activeId={householdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} displaySettings={displaySettings} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => { if (cloud) void cloud.auth.signOut(); }}/> : <>
         <section className="welcome-row"><div><div className="eyebrow"><span className="eyebrow-dot"/> {headerDate}</div><h1>{tab === "home" ? <>{copy.hello} <span>✳</span></> : (navItems.find((item) => item.id === tab)?.label ?? copy.history)}</h1><p>{tab === "home" ? copy.intro : language === "en" ? "Manage and search home information in one place." : "จัดการและค้นหาข้อมูลของบ้านได้ในที่เดียว"}</p></div><button className="primary-button desktop-add" onClick={() => openModal("item")}><span>＋</span> {copy.add}</button></section>
 
         {tab === "home" ? <>

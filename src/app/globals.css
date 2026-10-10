@@ -627,9 +627,10 @@ body{font-size:17px}
 .settings-switch:disabled{opacity:.5;cursor:wait}
 .settings-pin-input{width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);font-size:16px}
 .settings-display-controls,.settings-card .preferences-popover{position:static;width:100%;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;animation:none}
+.settings-display-controls .preferences-heading{font-size:17px;color:var(--ink)}
 .settings-display-controls .preference-group{margin-top:18px}
 .settings-display-controls .preference-group>span{font-size:13px;color:var(--muted)}
 .settings-display-controls .theme-options button{min-height:42px;font-size:13px}
 .settings-display-controls .accent-options button{width:30px;height:30px}
 .settings-display-controls .preferences-backup{margin-top:20px}
-@media(max-width:760px){.settings-page{padding:0 0 24px}.settings-page-head h1{font-size:23px}.settings-card{padding:17px}.settings-menu>button{min-height:72px}.settings-display-controls,.settings-card .preferences-popover{position:static;width:100%;padding:0}.settings-display-controls .accent-options{flex-wrap:wrap}.settings-card .household-join-form{grid-template-columns:1fr}}
+@media(max-width:760px){.settings-page{padding:0 0 24px}.settings-page-head{min-height:62px;color:#fff}.settings-page-head h1{font-size:23px;color:#fff}.settings-page-head span{color:#ffffffcf}.settings-card{padding:17px}.settings-menu>button{min-height:72px}.settings-display-controls,.settings-card .preferences-popover{position:static;width:100%;padding:0}.settings-display-controls .accent-options{flex-wrap:wrap}.settings-card .household-join-form{grid-template-columns:1fr}}

@@ -28,7 +28,7 @@ async function prepareProfilePhoto(file: File): Promise<Blob> {
   }
 }
 
-export default function SettingsPage({ houses, activeId, inviteCode, busy, error, language, userId, isAdmin, profilePhotoUrl, displaySettings, onPhotoChanged, onOpenAdmin, onOpenHistory, onSwitch, onInvite, onJoin, onSignOut }: {
+export default function SettingsPage({ houses, activeId, inviteCode, busy, error, language, userId, isAdmin, profilePhotoUrl, displaySettings, onPhotoChanged, onMediaPickerStart, onMediaPickerEnd, onOpenAdmin, onOpenHistory, onSwitch, onInvite, onJoin, onSignOut }: {
   houses: Household[];
   activeId: string;
   inviteCode: string;
@@ -40,6 +40,8 @@ export default function SettingsPage({ houses, activeId, inviteCode, busy, error
   profilePhotoUrl: string;
   displaySettings: ReactNode;
   onPhotoChanged: (url: string) => void;
+  onMediaPickerStart: () => void;
+  onMediaPickerEnd: () => void;
   onOpenAdmin: () => void;
   onOpenHistory: () => void;
   onSwitch: (id: string) => void;
@@ -78,7 +80,15 @@ export default function SettingsPage({ houses, activeId, inviteCode, busy, error
     return () => { mounted = false; };
   }, [pinKey]);
 
+  useEffect(() => {
+    const clear = () => onMediaPickerEnd();
+    const inputs = [galleryRef.current, cameraRef.current];
+    for (const input of inputs) input?.addEventListener("cancel", clear);
+    return () => { for (const input of inputs) input?.removeEventListener("cancel", clear); };
+  }, [onMediaPickerEnd]);
+
   const photoChanged = async (event: ChangeEvent<HTMLInputElement>) => {
+    onMediaPickerEnd();
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file || !userId) return;
@@ -132,7 +142,8 @@ export default function SettingsPage({ houses, activeId, inviteCode, busy, error
       setPinMessage(en ? "PIN at app opening is off on this device." : "ปิดการถาม PIN ตอนเปิดแอปบนเครื่องนี้แล้ว");
       return;
     }
-    if (!pinExists || currentPin.length !== 6) { setPinMessage(en ? "Enter your current six-digit PIN to turn it on." : "ใส่ PIN เดิม 6 หลักเพื่อเปิดใช้งาน"); return; }
+    if (!pinExists) { setPinMessage(en ? "Set a PIN below first." : "ตั้ง PIN ด้านล่างก่อน"); return; }
+    if (currentPin.length !== 6) { setPinMessage(en ? "Enter your current six-digit PIN to turn it on." : "ใส่ PIN เดิม 6 หลักเพื่อเปิดใช้งาน"); return; }
     setPinBusy(true); setPinMessage("");
     try {
       if (!await verifyDevicePin(currentPin)) throw new Error(en ? "Incorrect PIN or temporarily locked." : "PIN ไม่ถูกต้องหรือถูกพักการลองชั่วคราว");
@@ -157,7 +168,7 @@ export default function SettingsPage({ houses, activeId, inviteCode, busy, error
       {userId && <button type="button" className="settings-signout" onClick={onSignOut}><span className="settings-menu-icon">↪</span><span><strong>{en ? "Sign out" : "ออกจากระบบ"}</strong></span><b>›</b></button>}
     </div>}
     {section === "account" && <div className="settings-sections">
-      <section className="settings-card"><h2>{en ? "Profile photo" : "รูปโปรไฟล์"}</h2><div className="settings-profile-photo"><span className="settings-avatar">{profilePhotoUrl ? <img src={profilePhotoUrl} alt={en ? "Profile" : "รูปโปรไฟล์"}/> : "ค"}</span><div><strong>{en ? "Your photo" : "รูปของคุณ"}</strong><p>{en ? "Photos are cropped and reduced to under 1 MB." : "รูปจะถูกตัดและย่อให้น้อยกว่า 1 MB"}</p></div></div><div className="settings-button-row"><button type="button" className="secondary-button" disabled={photoBusy} onClick={() => galleryRef.current?.click()}>{en ? "Choose photo" : "เลือกรูป"}</button><button type="button" className="secondary-button" disabled={photoBusy} onClick={() => cameraRef.current?.click()}>{en ? "Take photo" : "ถ่ายรูป"}</button></div><input ref={galleryRef} className="visually-hidden" type="file" accept="image/*" onChange={(event) => void photoChanged(event)}/><input ref={cameraRef} className="visually-hidden" type="file" accept="image/*" capture="user" onChange={(event) => void photoChanged(event)}/>{photoMessage && <p role="status">{photoMessage}</p>}</section>
+      <section className="settings-card"><h2>{en ? "Profile photo" : "รูปโปรไฟล์"}</h2><div className="settings-profile-photo"><span className="settings-avatar">{profilePhotoUrl ? <img src={profilePhotoUrl} alt={en ? "Profile" : "รูปโปรไฟล์"}/> : "ค"}</span><div><strong>{en ? "Your photo" : "รูปของคุณ"}</strong><p>{en ? "Photos are cropped and reduced to under 1 MB." : "รูปจะถูกตัดและย่อให้น้อยกว่า 1 MB"}</p></div></div><div className="settings-button-row"><button type="button" className="secondary-button" disabled={photoBusy} onClick={() => { onMediaPickerStart(); galleryRef.current?.click(); }}>{en ? "Choose photo" : "เลือกรูป"}</button><button type="button" className="secondary-button" disabled={photoBusy} onClick={() => { onMediaPickerStart(); cameraRef.current?.click(); }}>{en ? "Take photo" : "ถ่ายรูป"}</button></div><input ref={galleryRef} className="visually-hidden" type="file" accept="image/*" onChange={(event) => void photoChanged(event)}/><input ref={cameraRef} className="visually-hidden" type="file" accept="image/*" capture="user" onChange={(event) => void photoChanged(event)}/>{photoMessage && <p role="status">{photoMessage}</p>}</section>
       <section className="settings-card"><h2>{en ? "Set or change password" : "ตั้งหรือเปลี่ยนรหัสผ่าน"}</h2><p>{en ? "Use this password to sign in with email." : "ใช้รหัสผ่านนี้เพื่อเข้าสู่ระบบด้วยอีเมล"}</p><form className="household-password-form" onSubmit={(event) => void changePassword(event)}><input type="password" minLength={8} required autoComplete="new-password" placeholder={en ? "New password (8+ characters)" : "รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)"} value={newPassword} onChange={(event) => setNewPassword(event.target.value)}/><input type="password" minLength={8} required autoComplete="new-password" placeholder={en ? "Confirm password" : "ยืนยันรหัสผ่าน"} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)}/><button type="submit" className="primary-button" disabled={passwordBusy}>{en ? "Save password" : "บันทึกรหัสผ่าน"}</button></form>{passwordMessage && <p role="status">{passwordMessage}</p>}</section>
     </div>}
     {section === "home" && <div className="settings-sections">

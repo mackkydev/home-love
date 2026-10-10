@@ -5,6 +5,11 @@ values ('profile-photos', 'profile-photos', false, 1048576,
 on conflict (id) do update set public = false, file_size_limit = 1048576,
   allowed_mime_types = array['image/jpeg']::text[];
 
+drop policy if exists profile_photos_read on storage.objects;
+drop policy if exists profile_photos_insert on storage.objects;
+drop policy if exists profile_photos_update on storage.objects;
+drop policy if exists profile_photos_delete on storage.objects;
+
 create policy profile_photos_read on storage.objects for select to authenticated
 using (bucket_id = 'profile-photos' and (storage.foldername(name))[1] = (select auth.uid())::text);
 create policy profile_photos_insert on storage.objects for insert to authenticated
