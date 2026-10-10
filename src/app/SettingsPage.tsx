@@ -28,9 +28,10 @@ async function prepareProfilePhoto(file: File): Promise<Blob> {
   }
 }
 
-export default function SettingsPage({ houses, activeId, inviteCode, busy, error, language, userId, isAdmin, profilePhotoUrl, displaySettings, onPhotoChanged, onMediaPickerStart, onMediaPickerEnd, onOpenAdmin, onOpenHistory, onSwitch, onRename, onInvite, onJoin, onSignOut }: {
+export default function SettingsPage({ houses, activeId, defaultHouseholdId, inviteCode, busy, error, language, userId, isAdmin, profilePhotoUrl, displaySettings, onPhotoChanged, onMediaPickerStart, onMediaPickerEnd, onOpenAdmin, onOpenHistory, onSwitch, onMakeDefault, onRename, onInvite, onJoin, onSignOut }: {
   houses: Household[];
   activeId: string;
+  defaultHouseholdId: string;
   inviteCode: string;
   busy: boolean;
   error: string;
@@ -45,7 +46,8 @@ export default function SettingsPage({ houses, activeId, inviteCode, busy, error
   onOpenAdmin: () => void;
   onOpenHistory: () => void;
   onSwitch: (id: string) => void;
-  onRename: (id: string, name: string) => void;
+  onMakeDefault: (id: string) => void;
+  onRename: (id: string, name: string) => Promise<boolean>;
   onInvite: () => void;
   onJoin: (code: string) => void;
   onSignOut: () => void;
@@ -53,7 +55,8 @@ export default function SettingsPage({ houses, activeId, inviteCode, busy, error
   const en = language === "en";
   const [section, setSection] = useState<Section>("menu");
   const [code, setCode] = useState("");
-  const [houseName, setHouseName] = useState("");
+  const [editingHouseId, setEditingHouseId] = useState("");
+  const [editingHouseName, setEditingHouseName] = useState("");
   const [copied, setCopied] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -75,7 +78,6 @@ export default function SettingsPage({ houses, activeId, inviteCode, busy, error
   const active = houses.find((house) => house.id === activeId);
   const canInvite = active?.role === "owner" || active?.role === "admin";
 
-  useEffect(() => { setHouseName(active?.name ?? ""); }, [active?.name]);
 
   useEffect(() => {
     setPinEnabled(localStorage.getItem(pinKey) === "enabled");
@@ -176,9 +178,23 @@ export default function SettingsPage({ houses, activeId, inviteCode, busy, error
       <section className="settings-card"><h2>{en ? "Set or change password" : "ตั้งหรือเปลี่ยนรหัสผ่าน"}</h2><p>{en ? "Use this password to sign in with email." : "ใช้รหัสผ่านนี้เพื่อเข้าสู่ระบบด้วยอีเมล"}</p><form className="household-password-form" onSubmit={(event) => void changePassword(event)}><input type="password" minLength={8} required autoComplete="new-password" placeholder={en ? "New password (8+ characters)" : "รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)"} value={newPassword} onChange={(event) => setNewPassword(event.target.value)}/><input type="password" minLength={8} required autoComplete="new-password" placeholder={en ? "Confirm password" : "ยืนยันรหัสผ่าน"} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)}/><button type="submit" className="primary-button" disabled={passwordBusy}>{en ? "Save password" : "บันทึกรหัสผ่าน"}</button></form>{passwordMessage && <p role="status">{passwordMessage}</p>}</section>
     </div>}
     {section === "home" && <div className="settings-sections">
-      <section className="settings-card"><h2>{en ? "Your homes" : "บ้านที่เป็นสมาชิก"}</h2><div className="household-list">{houses.map((house) => <button type="button" key={house.id} className={house.id === activeId ? "selected" : ""} disabled={busy} onClick={() => onSwitch(house.id)}><span>⌂</span><strong>{house.name}{houses.filter((other) => other.name === house.name).length > 1 ? ` · ${house.id.slice(0, 6).toUpperCase()}` : ""}</strong><small>{house.role === "owner" ? (en ? "Owner" : "เจ้าของ") : house.role === "admin" ? (en ? "Admin" : "ผู้ดูแล") : (en ? "Member" : "สมาชิก")}</small>{house.id === activeId && <b>✓</b>}</button>)}</div>{canInvite && <form className="household-rename-form" onSubmit={(event) => { event.preventDefault(); onRename(activeId, houseName); }}><label>{en ? "Home name" : "ชื่อบ้าน"}<input value={houseName} onChange={(event) => setHouseName(event.target.value)} maxLength={60} required placeholder={en ? "A name your family recognizes" : "ชื่อที่ครอบครัวจำได้ง่าย"}/></label><button type="submit" className="secondary-button" disabled={busy || !houseName.trim() || houseName.trim() === active?.name}>{en ? "Save name" : "บันทึกชื่อ"}</button></form>}</section>
+      <section className="settings-card">
+        <h2>{en ? "Your homes" : "บ้านที่เป็นสมาชิก"}</h2>
+        {error && <p className="household-panel-error" role="alert">{error}</p>}
+        <div className="household-list">{houses.map((house) => {
+          const canRename = house.role === "owner" || house.role === "admin";
+          const duplicateName = houses.some((other) => other.id !== house.id && other.name === house.name);
+          return <div className="household-row" key={house.id}>
+            <div className="household-row-top">
+              <button type="button" className={`household-select ${house.id === activeId ? "selected" : ""}`} disabled={busy} onClick={() => onSwitch(house.id)}><span className="household-icon">⌂</span><span className="household-label"><strong>{house.name}{duplicateName ? ` · ${house.id.slice(0, 6).toUpperCase()}` : ""}</strong><small>{house.role === "owner" ? (en ? "Owner" : "เจ้าของ") : house.role === "admin" ? (en ? "Admin" : "ผู้ดูแล") : (en ? "Member" : "สมาชิก")}</small></span>{house.id === activeId && <b>✓</b>}</button>
+              {canRename && <button type="button" className="household-edit" disabled={busy} aria-label={en ? `Rename ${house.name}` : `แก้ชื่อ ${house.name}`} onClick={() => { setEditingHouseId(house.id); setEditingHouseName(house.name); }}>✎</button>}
+            </div>
+            {editingHouseId === house.id ? <form className="household-inline-edit" onSubmit={(event) => { event.preventDefault(); void onRename(house.id, editingHouseName).then((saved) => { if (saved) setEditingHouseId(""); }); }}><input autoFocus value={editingHouseName} onChange={(event) => setEditingHouseName(event.target.value)} maxLength={60} required aria-label={en ? "Home name" : "ชื่อบ้าน"}/><button type="submit" className="primary-button" disabled={busy || !editingHouseName.trim() || editingHouseName.trim() === house.name}>{en ? "Save" : "บันทึก"}</button><button type="button" className="secondary-button" onClick={() => setEditingHouseId("")}>{en ? "Cancel" : "ยกเลิก"}</button></form> : <div className="household-row-bottom">{house.id === defaultHouseholdId ? <span className="household-default-label">★ {en ? "Default home" : "บ้านหลัก"}</span> : <button type="button" disabled={busy} onClick={() => onMakeDefault(house.id)}>☆ {en ? "Set as default" : "ตั้งเป็นบ้านหลัก"}</button>}</div>}
+          </div>;
+        })}</div>
+      </section>
       {canInvite && <section className="settings-card"><h2>{en ? "Invite family" : "เชิญเข้าร่วมบ้าน"}</h2><p>{en ? "The single-use code expires in 7 days." : "รหัสใช้ได้ครั้งเดียวและหมดอายุใน 7 วัน"}</p><button type="button" className="primary-button" disabled={busy} onClick={onInvite}>{en ? "Create invite code" : "สร้างรหัสเชิญ"}</button>{inviteCode && <div className="household-invite-code"><code>{inviteCode}</code><button type="button" onClick={() => void navigator.clipboard.writeText(inviteCode).then(() => setCopied(true))}>{copied ? (en ? "Copied" : "คัดลอกแล้ว") : (en ? "Copy" : "คัดลอก")}</button></div>}</section>}
-      <section className="settings-card"><h2>{en ? "Join a home" : "เข้าร่วมบ้าน"}</h2><p>{en ? "Enter an invite code shared by the home owner." : "กรอกรหัสเชิญที่เจ้าของบ้านส่งให้"}</p><form className="household-join-form" onSubmit={(event) => { event.preventDefault(); onJoin(code); }}><input required value={code} onChange={(event) => setCode(event.target.value)} placeholder={en ? "Invite code" : "รหัสเชิญ"} autoCapitalize="none" autoComplete="off"/><button type="submit" className="primary-button" disabled={busy || !code.trim()}>{busy ? (en ? "Please wait..." : "กรุณารอสักครู่...") : (en ? "Join" : "เข้าร่วม")}</button></form></section>{error && <p className="household-panel-error" role="alert">{error}</p>}
+      <section className="settings-card"><h2>{en ? "Join a home" : "เข้าร่วมบ้าน"}</h2><p>{en ? "Enter an invite code shared by the home owner." : "กรอกรหัสเชิญที่เจ้าของบ้านส่งให้"}</p><form className="household-join-form" onSubmit={(event) => { event.preventDefault(); onJoin(code); }}><input required value={code} onChange={(event) => setCode(event.target.value)} placeholder={en ? "Invite code" : "รหัสเชิญ"} autoCapitalize="none" autoComplete="off"/><button type="submit" className="primary-button" disabled={busy || !code.trim()}>{busy ? (en ? "Please wait..." : "กรุณารอสักครู่...") : (en ? "Join" : "เข้าร่วม")}</button></form></section>
     </div>}
     {section === "pin" && <div className="settings-sections"><section className="settings-card"><h2>{en ? "Ask for PIN when opening the app" : "ถาม PIN เมื่อเปิดแอป"}</h2><p>{en ? "This applies to this signed-in device. Email sign-in remains available." : "ใช้กับเครื่องนี้ที่เข้าสู่ระบบแล้ว ยังเข้าใช้ด้วยอีเมลได้ตามปกติ"}</p><div className="settings-toggle-row"><span>{pinEnabled ? (en ? "On" : "เปิดอยู่") : (en ? "Off" : "ปิดอยู่")}</span><button type="button" className={`settings-switch ${pinEnabled ? "on" : ""}`} role="switch" aria-checked={pinEnabled} aria-label={en ? "Ask for PIN when opening the app" : "ถาม PIN เมื่อเปิดแอป"} disabled={pinBusy || pinExists === null} onClick={() => void togglePin()}><i/></button></div>{pinExists && !pinEnabled && <input className="settings-pin-input" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="off" placeholder={en ? "Current PIN to turn on" : "PIN เดิมเพื่อเปิดใช้งาน"} value={currentPin} onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/>}</section><section className="settings-card"><h2>{pinExists ? (en ? "Change six-digit PIN" : "เปลี่ยน PIN 6 หลัก") : (en ? "Set six-digit PIN" : "ตั้ง PIN 6 หลัก")}</h2><p>{en ? "Choose a code that has not been used by another account." : "เลือกรหัสที่ไม่ซ้ำกับบัญชีอื่น"}</p>{pinExists === null ? <p>{en ? "Loading..." : "กำลังโหลด..."}</p> : <form className="household-password-form" onSubmit={(event) => void savePin(event)}>{!pinExists && <input type="password" minLength={8} required autoComplete="current-password" placeholder={en ? "Account password" : "รหัสผ่านบัญชี"} value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)}/>} {pinExists && <input type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "Current PIN" : "PIN เดิม"} value={currentPin} onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/>}<input type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "New six-digit PIN" : "PIN ใหม่ 6 หลัก"} value={newPin} onChange={(event) => setNewPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/><input type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "Confirm new PIN" : "ยืนยัน PIN ใหม่"} value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/><button type="submit" className="primary-button" disabled={pinBusy}>{pinExists ? (en ? "Change PIN" : "เปลี่ยน PIN") : (en ? "Set PIN" : "ตั้ง PIN")}</button></form>}{pinMessage && <p role="status">{pinMessage}</p>}</section></div>}
     {section === "display" && <div className="settings-sections"><section className="settings-card">{displaySettings}</section></div>}

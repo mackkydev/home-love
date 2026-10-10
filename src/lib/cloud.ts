@@ -217,9 +217,11 @@ async function displayEntry<T extends CloudEntry>(entry: T): Promise<T> {
 
 export async function listHouseholds(): Promise<Household[]> {
   if (!cloud) throw new Error("Supabase is not configured");
+  const { data: userData, error: userError } = await cloud.auth.getUser();
+  if (userError || !userData.user) throw userError ?? new Error("Please sign in again");
   const { data: defaultId, error: defaultError } = await cloud.rpc("ensure_personal_household");
   if (defaultError || !defaultId) throw defaultError ?? new Error("Cannot create household");
-  const { data: memberships, error: memberError } = await cloud.from("household_members").select("household_id,role");
+  const { data: memberships, error: memberError } = await cloud.from("household_members").select("household_id,role").eq("user_id", userData.user.id);
   if (memberError) throw memberError;
   if (!memberships?.length) return [];
   const { data: houses, error: houseError } = await cloud.from("households").select("id,name").in("id", memberships.map((item) => item.household_id));
@@ -255,11 +257,13 @@ export async function renameHousehold(householdId: string, name: string): Promis
 
 export async function openHousehold<T extends CloudEntry>(selectedId?: string): Promise<{ householdId: string; snapshot: CloudSnapshot<T> }> {
   if (!cloud) throw new Error("Supabase is not configured");
+  const { data: userData, error: userError } = await cloud.auth.getUser();
+  if (userError || !userData.user) throw userError ?? new Error("Please sign in again");
   const { data: defaultId, error: householdError } = await cloud.rpc("ensure_personal_household");
   if (householdError || !defaultId) throw householdError ?? new Error("Cannot create household");
   let householdId = defaultId as string;
   if (selectedId && selectedId !== defaultId) {
-    const { data: membership, error: memberError } = await cloud.from("household_members").select("household_id").eq("household_id", selectedId).maybeSingle();
+    const { data: membership, error: memberError } = await cloud.from("household_members").select("household_id").eq("household_id", selectedId).eq("user_id", userData.user.id).maybeSingle();
     if (memberError) throw memberError;
     if (!membership) throw new Error("You are not a member of this household");
     householdId = selectedId;

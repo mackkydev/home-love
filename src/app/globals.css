@@ -476,16 +476,22 @@ body{font-size:16px;line-height:1.5}
 .household-panel-section h3{margin:0 0 9px;font-size:16px}
 .household-panel-section p{margin:0 0 11px;color:var(--muted);font-size:13px;line-height:1.65}
 .household-list{display:grid;gap:7px}
-.household-list button{display:flex;align-items:center;gap:10px;width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:11px;background:var(--surface);text-align:left}
-.household-list button.selected{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 8%,var(--surface))}
-.household-list button>span{display:grid;place-items:center;width:29px;height:29px;flex:none;border-radius:9px;background:color-mix(in srgb,var(--blue) 12%,var(--surface));color:var(--blue);font-size:20px}
-.household-list button strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
-.household-list button small{color:var(--muted);font-size:11px}
-.household-list button b{color:var(--blue);font-size:17px}
-.household-rename-form{display:flex;align-items:end;gap:8px;margin-top:14px}
-.household-rename-form label{display:grid;gap:6px;min-width:0;flex:1;color:var(--muted);font-size:12px;font-weight:700}
-.household-rename-form input{width:100%;height:42px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;font-size:14px}
-.household-rename-form button{height:42px;white-space:nowrap}
+.household-row{padding:7px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.household-row-top{display:flex;align-items:stretch;gap:5px}
+.household-select{display:flex;align-items:center;gap:10px;min-width:0;flex:1;min-height:50px;padding:7px;border:1px solid transparent;border-radius:9px;background:transparent;text-align:left;color:var(--ink)}
+.household-select.selected{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 8%,var(--surface))}
+.household-icon{display:grid;place-items:center;width:29px;height:29px;flex:none;border-radius:9px;background:color-mix(in srgb,var(--blue) 12%,var(--surface));color:var(--blue);font-size:20px}
+.household-label{display:grid;min-width:0;flex:1;gap:2px}
+.household-label strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+.household-label small{color:var(--muted);font-size:11px}
+.household-select b{color:var(--blue);font-size:17px}
+.household-edit{width:38px;flex:none;border:0;border-radius:9px;background:color-mix(in srgb,var(--blue) 10%,var(--surface));color:var(--blue);font-size:23px}
+.household-row-bottom{display:flex;justify-content:flex-end;min-height:27px;padding:2px 4px 0}
+.household-row-bottom button{border:0;background:transparent;color:var(--blue);font-size:11px;font-weight:700}
+.household-default-label{color:var(--blue);font-size:11px;font-weight:800}
+.household-inline-edit{display:flex;gap:5px;padding:6px 4px 2px}
+.household-inline-edit input{min-width:0;flex:1;height:37px;padding:0 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font-size:13px}
+.household-inline-edit button{min-height:37px;padding:0 9px;font-size:11px;box-shadow:none}
 .cloud-auth-retry{display:flex;justify-content:center;gap:8px;margin:12px 0}
 .household-invite-code{display:flex;align-items:center;gap:8px;margin-top:12px;padding:8px;border:1px dashed var(--blue);border-radius:10px;background:color-mix(in srgb,var(--blue) 6%,var(--surface))}
 .household-invite-code code{flex:1;overflow-wrap:anywhere;font-size:13px;user-select:all}

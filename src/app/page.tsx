@@ -152,6 +152,7 @@ export default function Home() {
   const [syncRevision, setSyncRevision] = useState(0);
   const [pendingLocalImport, setPendingLocalImport] = useState<{ entries: Entry[]; categories: { name: string; icon: string; color: string }[] } | null>(null);
   const [householdId, setHouseholdId] = useState("");
+  const [defaultHouseholdId, setDefaultHouseholdId] = useState("");
   const [households, setHouseholds] = useState<Household[]>([]);
   const [profilePhotoUrl, setProfilePhotoUrl] = useState("");
   const [appAdmin, setAppAdmin] = useState(false);
@@ -228,13 +229,19 @@ export default function Home() {
     const list = await withHouseholdTimeout(listHouseholds());
     if (userId !== loadedUser.current) return;
     const storageKey = `baanjai-active-household-${userId}`;
-    const preferredId = requestedId ?? localStorage.getItem(storageKey);
+    const defaultKey = `baanjai-default-household-${userId}`;
+    const savedDefaultId = localStorage.getItem(defaultKey);
+    const savedActiveId = localStorage.getItem(storageKey);
+    const resolvedDefaultId = list.find((house) => house.id === savedDefaultId)?.id ?? list.find((house) => house.id === savedActiveId)?.id ?? list[0]?.id;
+    const preferredId = requestedId ?? resolvedDefaultId;
     if (requestedId && !list.some((house) => house.id === requestedId)) throw new Error("ยังไม่พบสิทธิ์เข้าถึงบ้านนี้ กรุณาลองอีกครั้ง");
     const selectedId = list.find((house) => house.id === preferredId)?.id ?? list[0]?.id;
     if (!selectedId) throw new Error("No household is available");
     const { householdId: id, snapshot } = await withHouseholdTimeout(openHousehold<Entry>(selectedId));
     if (userId !== loadedUser.current) return;
     localStorage.setItem(storageKey, id);
+    if (resolvedDefaultId) localStorage.setItem(defaultKey, resolvedDefaultId);
+    setDefaultHouseholdId(resolvedDefaultId ?? "");
     cloudSnapshot.current = snapshot;
     activeHouseholdRef.current = id;
     setHouseholds(list);
@@ -259,7 +266,7 @@ export default function Home() {
       if (event === "PASSWORD_RECOVERY") setRecoveryMode(true);
       setAuthStatus(session ? "signed-in" : "signed-out");
       if (session && loadedUser.current !== session.user.id) { setCloudReady(false); cloudSnapshot.current = null; activeHouseholdRef.current = ""; loadedUser.current = session.user.id; void getProfilePhotoUrl(session.user.id).then((url) => { if (active) setProfilePhotoUrl(url); }); setDeviceLocked(event === "INITIAL_SESSION" && localStorage.getItem(`baanjai-pin-device-${session.user.id}`) === "enabled"); setTimeout(() => { if (active) { void loadHouseholdData(undefined, session.user.id).catch((error) => setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ")); void isAppAdmin().then((value) => { if (active && loadedUser.current === session.user.id) setAppAdmin(value); }).catch(() => setAppAdmin(false)); } }, 0); }
-      if (!session) { loadedUser.current = ""; setDeviceLocked(false); setProfilePhotoUrl(""); setAppAdmin(false); setShowAdmin(false); setRecoveryMode(false); setCloudReady(false); setCloudError(""); setHouseholdId(""); setHouseholds([]); setPendingLocalImport(null); cloudSnapshot.current = null; activeHouseholdRef.current = ""; }
+      if (!session) { loadedUser.current = ""; setDeviceLocked(false); setProfilePhotoUrl(""); setAppAdmin(false); setShowAdmin(false); setRecoveryMode(false); setCloudReady(false); setCloudError(""); setHouseholdId(""); setDefaultHouseholdId(""); setHouseholds([]); setPendingLocalImport(null); cloudSnapshot.current = null; activeHouseholdRef.current = ""; }
     });
     return () => { active = false; data.subscription.unsubscribe(); };
   }, [loadHouseholdData]);
@@ -511,20 +518,30 @@ export default function Home() {
     await cloudQueue.current;
     if (cloudSnapshot.current && householdId) cloudSnapshot.current = await saveHousehold(householdId, entries, extraCategories, cloudSnapshot.current);
   };
-  const switchHousehold = async (id: string) => {
-    if (id === householdId) return;
+  const switchHousehold = async (id: string): Promise<boolean> => {
+    if (id === householdId) { setTab("home"); return true; }
     setHouseholdBusy(true);
     setHouseholdError("");
     try {
       await flushCurrentHousehold();
       await loadHouseholdData(id);
       setInviteCode("");
+      setTab("home");
+      return true;
     } catch (error) {
       setHouseholdError(error instanceof Error ? error.message : "เปลี่ยนบ้านไม่สำเร็จ");
+      return false;
     } finally {
       switchingHouseholdRef.current = false;
       setHouseholdBusy(false);
     }
+  };
+  const makeDefaultHousehold = async (id: string) => {
+    if (!households.some((house) => house.id === id)) return;
+    if (!await switchHousehold(id)) return;
+    localStorage.setItem(`baanjai-default-household-${loadedUser.current}`, id);
+    setDefaultHouseholdId(id);
+    setNotice(language === "en" ? "Default home saved" : "ตั้งเป็นบ้านหลักแล้ว");
   };
   const createInvite = async () => {
     setHouseholdBusy(true);
@@ -533,15 +550,17 @@ export default function Home() {
     catch (error) { setHouseholdError(error instanceof Error ? error.message : "สร้างรหัสเชิญไม่สำเร็จ"); }
     finally { setHouseholdBusy(false); }
   };
-  const renameCurrentHousehold = async (id: string, name: string) => {
+  const renameCurrentHousehold = async (id: string, name: string): Promise<boolean> => {
     setHouseholdBusy(true);
     setHouseholdError("");
     try {
       await renameHousehold(id, name);
       setHouseholds((current) => current.map((house) => house.id === id ? { ...house, name: name.trim() } : house));
       setNotice(language === "en" ? "Home name saved" : "บันทึกชื่อบ้านแล้ว");
+      return true;
     } catch (error) {
       setHouseholdError(error instanceof Error ? error.message : "เปลี่ยนชื่อบ้านไม่สำเร็จ");
+      return false;
     } finally {
       setHouseholdBusy(false);
     }
@@ -555,6 +574,7 @@ export default function Home() {
       joinedId = await joinHousehold(code);
       await loadHouseholdData(joinedId);
       setInviteCode("");
+      setTab("home");
       setNotice(language === "en" ? "Joined the household" : "เข้าร่วมบ้านแล้ว");
     } catch (error) {
       if (joinedId) {
@@ -597,7 +617,7 @@ export default function Home() {
       {showAlerts && <section className="alerts-popover" aria-label="รายการแจ้งเตือน"><div className="alerts-heading"><div><strong>รายการใกล้หมด</strong><small>ตามจำนวนที่ใช้ต่อวันและวันที่ตั้งเตือน</small></div><button type="button" aria-label="ปิดการแจ้งเตือน" onClick={() => setShowAlerts(false)}><Icon name="close" size={16}/></button></div>{stockAlerts.length ? <ul>{stockAlerts.map(({ entry, days, quantity }) => <li key={entry.id}><span className="alert-dot"/><div><strong>{entry.name}</strong><small>เหลือประมาณ {currency(quantity)} {entry.stock?.unit} · {stockRunoutLabel(days, language, stockRunoutDate(entry.stock))}</small></div><button type="button" onClick={() => { setTab("items"); setCategory(entry.category); setEndingSoon(true); setShowAlerts(false); }}>ดู</button></li>)}</ul> : <p className="alerts-empty">ยังไม่มีรายการที่ใกล้หมด</p>}{notificationPermission !== "denied" && !pushReady && <button className="enable-notifications" type="button" onClick={() => void enablePush()}>{ui("เปิดแจ้งเตือนบนโทรศัพท์", "Enable phone notifications")}</button>}{pushReady && <p className="notification-help">{ui("เปิดเว็บพุชแล้ว", "Web Push enabled")}</p>}{notificationPermission === "denied" && <p className="notification-help">การแจ้งเตือนถูกปิดไว้ เปิดสิทธิ์ได้ในการตั้งค่าเว็บไซต์</p>}{notificationPermission === "unsupported" && <p className="notification-help">เบราว์เซอร์นี้ไม่รองรับการแจ้งเตือน</p>}</section>}
 
       <div className="content-area">
-        {tab === "settings" ? <SettingsPage houses={households} activeId={householdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} displaySettings={displaySettings} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onRename={(id, name) => void renameCurrentHousehold(id, name)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => void signOut()}/> : <>
+        {tab === "settings" ? <SettingsPage houses={households} activeId={householdId} defaultHouseholdId={defaultHouseholdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} displaySettings={displaySettings} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onMakeDefault={(id) => void makeDefaultHousehold(id)} onRename={(id, name) => renameCurrentHousehold(id, name)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => void signOut()}/> : <>
         <section className="welcome-row"><div><div className="eyebrow"><span className="eyebrow-dot"/> {headerDate}</div><h1>{tab === "home" ? <>{copy.hello} <span>✳</span></> : (navItems.find((item) => item.id === tab)?.label ?? (tab === "calendar" ? ui("บันทึกแจ้งเตือน", "Calendar") : copy.history))}</h1><p>{tab === "home" ? copy.intro : language === "en" ? "Manage and search home information in one place." : "จัดการและค้นหาข้อมูลของบ้านได้ในที่เดียว"}</p></div><button className="primary-button desktop-add" onClick={() => openModal(tab === "services" ? "service" : tab === "items" && category === "เอกสาร" ? "note" : "item")}><span>＋</span> {copy.add}</button></section>
 
         {tab === "calendar" ? <CalendarPage entries={entries} language={language} onSave={(entry) => setEntries((previous) => [entry, ...previous])} onDelete={(entry) => removeEntry(entry)} onOpenEntry={(id) => openDetail(id)}/> : tab === "home" ? <>
