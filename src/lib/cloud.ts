@@ -8,6 +8,27 @@ export const cloud = url && key ? createClient(url, key, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
 }) : null;
 
+export async function isAppAdmin(): Promise<boolean> {
+  if (!cloud) return false;
+  const { data, error } = await cloud.rpc("is_app_admin");
+  if (error) throw error;
+  return data === true;
+}
+
+export async function getSignupOpen(): Promise<boolean> {
+  if (!cloud) return true;
+  const { data, error } = await cloud.rpc("get_signup_open");
+  if (error) throw error;
+  return data === true;
+}
+
+export async function setSignupOpen(open: boolean): Promise<boolean> {
+  if (!cloud) throw new Error("Supabase is not configured");
+  const { data, error } = await cloud.rpc("set_signup_open", { new_value: open });
+  if (error) throw error;
+  return data === true;
+}
+
 export type CloudCategory = { name: string; icon: string; color: string };
 export type Household = { id: string; name: string; role: "owner" | "admin" | "member" };
 export type CloudEntry = {

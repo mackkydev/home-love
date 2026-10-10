@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { cloud } from "@/lib/cloud";
+import { useEffect, useState, type FormEvent } from "react";
+import { cloud, getSignupOpen } from "@/lib/cloud";
 
 type AuthMode = "login" | "signup" | "forgot";
 
@@ -25,7 +25,16 @@ export default function CloudAuth({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [signupOpen, setSignupOpenState] = useState<boolean | null>(null);
   const en = language === "en";
+
+  useEffect(() => {
+    let active = true;
+    void getSignupOpen().then((open) => { if (active) setSignupOpenState(open); }).catch(() => { if (active) setSignupOpenState(true); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => { if (signupOpen === false && mode === "signup") setMode("login"); }, [signupOpen, mode]);
 
   const changeMode = (next: AuthMode) => {
     setMode(next);
@@ -56,6 +65,7 @@ export default function CloudAuth({
         const { error: authError } = await cloud.auth.signInWithPassword({ email: email.trim(), password });
         if (authError) throw authError;
       } else if (mode === "signup") {
+        if (signupOpen !== true) throw new Error(en ? "Registration is closed." : "ขณะนี้ปิดรับสมัครสมาชิก");
         const { data, error: authError } = await cloud.auth.signUp({
           email: email.trim(),
           password,
@@ -91,8 +101,9 @@ export default function CloudAuth({
       {(error || cloudError) && <p className="cloud-error" role="alert">{error || cloudError}</p>}
       {!recoveryMode && <div className="cloud-auth-links">
         {mode !== "login" && <button type="button" onClick={() => changeMode("login")}>{en ? "Back to sign in" : "กลับไปเข้าสู่ระบบ"}</button>}
-        {mode === "login" && <><button type="button" onClick={() => changeMode("signup")}>{en ? "Create an account" : "สมัครสมาชิก"}</button><button type="button" onClick={() => changeMode("forgot")}>{en ? "Forgot password?" : "ลืมรหัสผ่าน / เคยเข้าด้วยลิงก์"}</button></>}
+        {mode === "login" && <>{signupOpen === true && <button type="button" onClick={() => changeMode("signup")}>{en ? "Create an account" : "สมัครสมาชิก"}</button>}<button type="button" onClick={() => changeMode("forgot")}>{en ? "Forgot password?" : "ลืมรหัสผ่าน / เคยเข้าด้วยลิงก์"}</button></>}
       </div>}
+      {!recoveryMode && signupOpen === false && <p className="cloud-signup-closed" role="status">{en ? "New registrations are currently closed. Existing members can still sign in." : "ขณะนี้ปิดรับสมัครสมาชิก สมาชิกเดิมยังเข้าสู่ระบบได้"}</p>}
     </>}
     <small>{en ? "Your household data is protected by your account." : "ข้อมูลของบ้านจะเปิดให้เฉพาะบัญชีที่เป็นสมาชิก"}</small>
   </section></main>;

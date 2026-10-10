@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cloud, cloudEnabled, createHouseholdInvite, joinHousehold, listHouseholds, openHousehold, saveHousehold, type CloudSnapshot, type Household } from "@/lib/cloud";
+import { cloud, cloudEnabled, createHouseholdInvite, isAppAdmin, joinHousehold, listHouseholds, openHousehold, saveHousehold, type CloudSnapshot, type Household } from "@/lib/cloud";
 import CloudAuth from "./CloudAuth";
 import HouseholdPanel from "./HouseholdPanel";
+import AdminPanel from "./AdminPanel";
 
 type Tab = "home" | "items" | "services" | "history";
 type AppTheme = "light" | "dark" | "system";
@@ -125,6 +126,8 @@ export default function Home() {
   const [householdId, setHouseholdId] = useState("");
   const [households, setHouseholds] = useState<Household[]>([]);
   const [showHouseholds, setShowHouseholds] = useState(false);
+  const [appAdmin, setAppAdmin] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
   const [householdBusy, setHouseholdBusy] = useState(false);
   const [householdError, setHouseholdError] = useState("");
@@ -214,8 +217,8 @@ export default function Home() {
       if (!active) return;
       if (event === "PASSWORD_RECOVERY") setRecoveryMode(true);
       setAuthStatus(session ? "signed-in" : "signed-out");
-      if (session && loadedUser.current !== session.user.id) { loadedUser.current = session.user.id; setTimeout(() => { if (active) void loadHouseholdData(undefined, session.user.id).catch((error) => setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ")); }, 0); }
-      if (!session) { loadedUser.current = ""; setRecoveryMode(false); setCloudReady(false); setCloudError(""); setHouseholdId(""); setHouseholds([]); setPendingLocalImport(null); cloudSnapshot.current = null; activeHouseholdRef.current = ""; }
+      if (session && loadedUser.current !== session.user.id) { loadedUser.current = session.user.id; setTimeout(() => { if (active) { void loadHouseholdData(undefined, session.user.id).catch((error) => setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ")); void isAppAdmin().then((value) => { if (active && loadedUser.current === session.user.id) setAppAdmin(value); }).catch(() => setAppAdmin(false)); } }, 0); }
+      if (!session) { loadedUser.current = ""; setAppAdmin(false); setShowAdmin(false); setShowHouseholds(false); setRecoveryMode(false); setCloudReady(false); setCloudError(""); setHouseholdId(""); setHouseholds([]); setPendingLocalImport(null); cloudSnapshot.current = null; activeHouseholdRef.current = ""; }
     });
     return () => { active = false; data.subscription.unsubscribe(); };
   }, [loadHouseholdData]);
@@ -445,7 +448,8 @@ export default function Home() {
       <nav className="mobile-nav">{navItems.slice(0, 2).map((item) => <button key={item.id} className={tab === item.id ? "selected" : ""} onClick={() => setTab(item.id)}><Icon name={item.icon === "ticket" ? "spark" : item.icon} size={21}/><span>{item.label === "หน้าหลัก" ? "หน้าแรก" : item.label}</span></button>)}<button className="mobile-add" onClick={() => openModal("item")} aria-label={copy.add}><span>＋</span><b>{language === "en" ? "Add" : "เพิ่ม"}</b></button>{navItems.slice(2).map((item) => <button key={item.id} className={tab === item.id ? "selected" : ""} onClick={() => setTab(item.id)}><Icon name={item.icon === "ticket" ? "spark" : item.icon} size={21}/><span>{item.label === "สิทธิ์บริการ" ? "บริการ" : item.label}</span></button>)}</nav>
     </section>
 
-    {cloudEnabled && showHouseholds && <HouseholdPanel houses={households} activeId={householdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} onClose={() => { setShowHouseholds(false); setHouseholdError(""); }} onSwitch={(id) => void switchHousehold(id)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => { setShowHouseholds(false); if (cloud) void cloud.auth.signOut(); }}/>}
+    {cloudEnabled && showHouseholds && <HouseholdPanel houses={households} activeId={householdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} isAdmin={appAdmin} onOpenAdmin={() => { setShowHouseholds(false); setShowAdmin(true); }} onClose={() => { setShowHouseholds(false); setHouseholdError(""); }} onSwitch={(id) => void switchHousehold(id)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => { setShowHouseholds(false); if (cloud) void cloud.auth.signOut(); }}/>}
+    {cloudEnabled && appAdmin && showAdmin && <AdminPanel language={language} onClose={() => setShowAdmin(false)}/>}
 
     {modal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { setModal(null); setEditingEntry(null); } }}>
       <form className="entry-modal" onSubmit={saveEntry}>

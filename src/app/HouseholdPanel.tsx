@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import { cloud, type Household } from "@/lib/cloud";
 
 export default function HouseholdPanel({
-  houses, activeId, inviteCode, busy, error, language, onClose, onSwitch, onInvite, onJoin, onSignOut,
+  houses, activeId, inviteCode, busy, error, language, isAdmin, onOpenAdmin, onClose, onSwitch, onInvite, onJoin, onSignOut,
 }: {
   houses: Household[];
   activeId: string;
@@ -12,6 +12,8 @@ export default function HouseholdPanel({
   busy: boolean;
   error: string;
   language: "th" | "en";
+  isAdmin: boolean;
+  onOpenAdmin: () => void;
   onClose: () => void;
   onSwitch: (id: string) => void;
   onInvite: () => void;
@@ -53,6 +55,8 @@ export default function HouseholdPanel({
       <section className="household-panel-section"><h3>{en ? "Join a household" : "เข้าร่วมบ้าน"}</h3><p>{en ? "Sign in to your own account, then enter the code shared by the owner." : "เข้าสู่ระบบด้วยบัญชีของตัวเอง แล้วกรอกรหัสที่เจ้าของบ้านส่งให้"}</p><form className="household-join-form" onSubmit={(event) => { event.preventDefault(); onJoin(code); }}><input required value={code} onChange={(event) => setCode(event.target.value)} placeholder={en ? "Invite code" : "รหัสเชิญ"} autoCapitalize="none" autoComplete="off"/><button type="submit" className="primary-button" disabled={busy || !code.trim()}>{en ? "Join" : "เข้าร่วม"}</button></form></section>
 
       <section className="household-panel-section"><h3>{en ? "Password" : "รหัสผ่าน"}</h3><p>{en ? "If you previously signed in with an email link, set a password here for future sign-ins." : "หากเคยเข้าใช้ด้วยลิงก์อีเมล ตั้งรหัสผ่านที่นี่เพื่อใช้เข้าสู่ระบบครั้งต่อไป"}</p><form className="household-password-form" onSubmit={changePassword}><input type="password" minLength={8} required autoComplete="new-password" placeholder={en ? "New password (8+ characters)" : "รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)"} value={newPassword} onChange={(event) => setNewPassword(event.target.value)}/><input type="password" minLength={8} required autoComplete="new-password" placeholder={en ? "Confirm password" : "ยืนยันรหัสผ่าน"} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)}/><button type="submit" className="secondary-button" disabled={passwordBusy}>{en ? "Save password" : "บันทึกรหัสผ่าน"}</button></form>{passwordMessage && <p role="status">{passwordMessage}</p>}</section>
+
+      {isAdmin && <section className="household-panel-section"><h3>{en ? "App administration" : "ผู้ดูแลระบบ"}</h3><p>{en ? "Manage who can register for a new account." : "จัดการการเปิดรับสมัครสมาชิกใหม่"}</p><button type="button" className="admin-open-button" onClick={onOpenAdmin}>{en ? "Open admin settings" : "เปิดหน้าจัดการระบบ"} <span aria-hidden="true">›</span></button></section>}
 
       {error && <p className="household-panel-error" role="alert">{error}</p>}
       <button type="button" className="household-signout" onClick={onSignOut}>{en ? "Sign out" : "ออกจากระบบ"}</button>

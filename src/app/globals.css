@@ -489,3 +489,12 @@ body{font-size:16px;line-height:1.5}
 .household-panel-error{margin:0 0 12px;padding:10px;border-radius:9px;background:#fff0f2;color:#b83750;font-size:13px}
 .household-signout{width:100%;padding:11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--muted);font-size:13px;font-weight:700}
 @media(max-width:760px){.household-panel{padding:20px 17px}.household-panel-heading h2{font-size:19px}.household-join-form{grid-template-columns:1fr}.household-join-form .primary-button{width:100%}}
+.cloud-signup-closed{margin:14px 0 0!important;padding:11px 12px;border-radius:10px;background:color-mix(in srgb,var(--blue) 8%,var(--surface));color:var(--ink)!important;font-size:13px!important}
+.admin-open-button{display:flex;align-items:center;justify-content:space-between;width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--blue) 8%,var(--surface));color:var(--blue);font-size:14px;font-weight:700;text-align:left}
+.admin-open-button span{font-size:22px;line-height:1}
+.admin-setting-card{display:flex;align-items:center;gap:18px;padding:18px;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--blue) 5%,var(--surface))}
+.admin-setting-copy{flex:1;min-width:0}.admin-setting-copy strong{font-size:16px}.admin-setting-copy p{margin:7px 0 10px;color:var(--muted);font-size:13px;line-height:1.6}
+.admin-status{display:inline-block;padding:5px 9px;border-radius:99px;background:color-mix(in srgb,#e35d67 12%,var(--surface));color:#bd3e4d;font-size:12px;font-weight:700}.admin-status.is-open{background:color-mix(in srgb,#20a572 13%,var(--surface));color:#16875e}
+.admin-switch{width:53px;height:31px;flex:none;padding:3px;border:0;border-radius:99px;background:#a8b0c0;cursor:pointer;transition:background .2s}.admin-switch.on{background:var(--blue)}.admin-switch:disabled{opacity:.55;cursor:wait}.admin-switch span{display:block;width:25px;height:25px;border-radius:50%;background:#fff;box-shadow:0 2px 5px #0002;transition:transform .2s}.admin-switch.on span{transform:translateX(22px)}
+.admin-panel-note{margin:15px 0 0;color:var(--muted);font-size:12px;line-height:1.6}
+[data-theme="dark"] .admin-status:not(.is-open){color:#ffc6cc}[data-theme="dark"] .admin-status.is-open{color:#9be8c6}
