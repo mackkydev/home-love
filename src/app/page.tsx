@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cloud, cloudEnabled, createHouseholdInvite, createPortableBackup, getProfilePhotoUrl, isAppAdmin, joinHousehold, listHouseholds, openHousehold, saveHousehold, type CloudSnapshot, type Household } from "@/lib/cloud";
+import { cloud, cloudEnabled, createHouseholdInvite, createPortableBackup, getProfilePhotoUrl, isAppAdmin, joinHousehold, listHouseholds, openHousehold, renameHousehold, saveHousehold, type CloudSnapshot, type Household } from "@/lib/cloud";
 import CloudAuth from "./CloudAuth";
 import SettingsPage from "./SettingsPage";
 import AdminPanel from "./AdminPanel";
@@ -129,6 +129,17 @@ async function documentAttachment(file: File): Promise<Attachment> {
   return { name: file.name, data: await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file); }), type: file.type || "application/octet-stream" };
 }
 
+async function withHouseholdTimeout<T>(task: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([task, new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("โหลดข้อมูลบ้านใช้เวลานานเกินไป กรุณาลองอีกครั้ง")), 25_000);
+    })]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export default function Home() {
   const [tab, setTab] = useState<Tab>("home");
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
@@ -213,15 +224,15 @@ export default function Home() {
   useEffect(() => { if (ready && !cloudEnabled) localStorage.setItem("baanjai-categories-v1", JSON.stringify(extraCategories)); }, [extraCategories, ready]);
   const loadHouseholdData = useCallback(async (requestedId?: string, userId = loadedUser.current) => {
     if (!userId) return;
-    setCloudReady(false);
     setCloudError("");
-    const list = await listHouseholds();
+    const list = await withHouseholdTimeout(listHouseholds());
     if (userId !== loadedUser.current) return;
     const storageKey = `baanjai-active-household-${userId}`;
     const preferredId = requestedId ?? localStorage.getItem(storageKey);
+    if (requestedId && !list.some((house) => house.id === requestedId)) throw new Error("ยังไม่พบสิทธิ์เข้าถึงบ้านนี้ กรุณาลองอีกครั้ง");
     const selectedId = list.find((house) => house.id === preferredId)?.id ?? list[0]?.id;
     if (!selectedId) throw new Error("No household is available");
-    const { householdId: id, snapshot } = await openHousehold<Entry>(selectedId);
+    const { householdId: id, snapshot } = await withHouseholdTimeout(openHousehold<Entry>(selectedId));
     if (userId !== loadedUser.current) return;
     localStorage.setItem(storageKey, id);
     cloudSnapshot.current = snapshot;
@@ -247,7 +258,7 @@ export default function Home() {
       if (!active) return;
       if (event === "PASSWORD_RECOVERY") setRecoveryMode(true);
       setAuthStatus(session ? "signed-in" : "signed-out");
-      if (session && loadedUser.current !== session.user.id) { loadedUser.current = session.user.id; void getProfilePhotoUrl(session.user.id).then((url) => { if (active) setProfilePhotoUrl(url); }); setDeviceLocked(event === "INITIAL_SESSION" && localStorage.getItem(`baanjai-pin-device-${session.user.id}`) === "enabled"); setTimeout(() => { if (active) { void loadHouseholdData(undefined, session.user.id).catch((error) => setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ")); void isAppAdmin().then((value) => { if (active && loadedUser.current === session.user.id) setAppAdmin(value); }).catch(() => setAppAdmin(false)); } }, 0); }
+      if (session && loadedUser.current !== session.user.id) { setCloudReady(false); cloudSnapshot.current = null; activeHouseholdRef.current = ""; loadedUser.current = session.user.id; void getProfilePhotoUrl(session.user.id).then((url) => { if (active) setProfilePhotoUrl(url); }); setDeviceLocked(event === "INITIAL_SESSION" && localStorage.getItem(`baanjai-pin-device-${session.user.id}`) === "enabled"); setTimeout(() => { if (active) { void loadHouseholdData(undefined, session.user.id).catch((error) => setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ")); void isAppAdmin().then((value) => { if (active && loadedUser.current === session.user.id) setAppAdmin(value); }).catch(() => setAppAdmin(false)); } }, 0); }
       if (!session) { loadedUser.current = ""; setDeviceLocked(false); setProfilePhotoUrl(""); setAppAdmin(false); setShowAdmin(false); setRecoveryMode(false); setCloudReady(false); setCloudError(""); setHouseholdId(""); setHouseholds([]); setPendingLocalImport(null); cloudSnapshot.current = null; activeHouseholdRef.current = ""; }
     });
     return () => { active = false; data.subscription.unsubscribe(); };
@@ -522,6 +533,19 @@ export default function Home() {
     catch (error) { setHouseholdError(error instanceof Error ? error.message : "สร้างรหัสเชิญไม่สำเร็จ"); }
     finally { setHouseholdBusy(false); }
   };
+  const renameCurrentHousehold = async (id: string, name: string) => {
+    setHouseholdBusy(true);
+    setHouseholdError("");
+    try {
+      await renameHousehold(id, name);
+      setHouseholds((current) => current.map((house) => house.id === id ? { ...house, name: name.trim() } : house));
+      setNotice(language === "en" ? "Home name saved" : "บันทึกชื่อบ้านแล้ว");
+    } catch (error) {
+      setHouseholdError(error instanceof Error ? error.message : "เปลี่ยนชื่อบ้านไม่สำเร็จ");
+    } finally {
+      setHouseholdBusy(false);
+    }
+  };
   const joinWithCode = async (code: string) => {
     setHouseholdBusy(true);
     setHouseholdError("");
@@ -543,7 +567,7 @@ export default function Home() {
   const navItems: { id: Tab; label: string; icon: string }[] = [{ id: "home", label: copy.home, icon: "home" }, { id: "items", label: copy.items, icon: "bag" }, { id: "services", label: copy.services, icon: "ticket" }, { id: "settings", label: ui("ตั้งค่า", "Settings"), icon: "settings" }];
   const displayEntries = tab === "services" ? filteredEntries.filter((entry) => entry.kind === "service") : tab === "items" ? filteredEntries.filter((entry) => entry.kind === "item" || entry.kind === "note") : tab === "history" ? filteredEntries : [];
 
-  if (cloudEnabled && (recoveryMode || !cloudReady || authStatus !== "signed-in")) return <CloudAuth checking={authStatus === "checking" || (authStatus === "signed-in" && !cloudReady)} recoveryMode={recoveryMode} language={language} cloudError={cloudError} onRecoveryComplete={() => setRecoveryMode(false)}/>;
+  if (cloudEnabled && (recoveryMode || !cloudReady || authStatus !== "signed-in")) return <CloudAuth checking={authStatus === "checking" || (authStatus === "signed-in" && !cloudReady)} recoveryMode={recoveryMode} language={language} cloudError={cloudError} onRetry={() => void loadHouseholdData().catch((error) => setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ"))} onRecoveryComplete={() => setRecoveryMode(false)}/>;
   if (cloudEnabled && deviceLocked) return <PinLock language={language} onUnlock={() => setDeviceLocked(false)}/>;
 
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId);
@@ -566,7 +590,7 @@ export default function Home() {
       {showAlerts && <section className="alerts-popover" aria-label="รายการแจ้งเตือน"><div className="alerts-heading"><div><strong>รายการใกล้หมด</strong><small>ตามจำนวนที่ใช้ต่อวันและวันที่ตั้งเตือน</small></div><button type="button" aria-label="ปิดการแจ้งเตือน" onClick={() => setShowAlerts(false)}><Icon name="close" size={16}/></button></div>{stockAlerts.length ? <ul>{stockAlerts.map(({ entry, days, quantity }) => <li key={entry.id}><span className="alert-dot"/><div><strong>{entry.name}</strong><small>เหลือประมาณ {currency(quantity)} {entry.stock?.unit} · {stockRunoutLabel(days, language, stockRunoutDate(entry.stock))}</small></div><button type="button" onClick={() => { setTab("items"); setCategory(entry.category); setEndingSoon(true); setShowAlerts(false); }}>ดู</button></li>)}</ul> : <p className="alerts-empty">ยังไม่มีรายการที่ใกล้หมด</p>}{notificationPermission !== "denied" && !pushReady && <button className="enable-notifications" type="button" onClick={() => void enablePush()}>{ui("เปิดแจ้งเตือนบนโทรศัพท์", "Enable phone notifications")}</button>}{pushReady && <p className="notification-help">{ui("เปิดเว็บพุชแล้ว", "Web Push enabled")}</p>}{notificationPermission === "denied" && <p className="notification-help">การแจ้งเตือนถูกปิดไว้ เปิดสิทธิ์ได้ในการตั้งค่าเว็บไซต์</p>}{notificationPermission === "unsupported" && <p className="notification-help">เบราว์เซอร์นี้ไม่รองรับการแจ้งเตือน</p>}</section>}
 
       <div className="content-area">
-        {tab === "settings" ? <SettingsPage houses={households} activeId={householdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} displaySettings={displaySettings} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => void signOut()}/> : <>
+        {tab === "settings" ? <SettingsPage houses={households} activeId={householdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} displaySettings={displaySettings} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onRename={(id, name) => void renameCurrentHousehold(id, name)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => void signOut()}/> : <>
         <section className="welcome-row"><div><div className="eyebrow"><span className="eyebrow-dot"/> {headerDate}</div><h1>{tab === "home" ? <>{copy.hello} <span>✳</span></> : (navItems.find((item) => item.id === tab)?.label ?? (tab === "calendar" ? ui("บันทึกแจ้งเตือน", "Calendar") : copy.history))}</h1><p>{tab === "home" ? copy.intro : language === "en" ? "Manage and search home information in one place." : "จัดการและค้นหาข้อมูลของบ้านได้ในที่เดียว"}</p></div><button className="primary-button desktop-add" onClick={() => openModal(tab === "services" ? "service" : tab === "items" && category === "เอกสาร" ? "note" : "item")}><span>＋</span> {copy.add}</button></section>
 
         {tab === "calendar" ? <CalendarPage entries={entries} language={language} onSave={(entry) => setEntries((previous) => [entry, ...previous])} onDelete={(entry) => removeEntry(entry)} onOpenEntry={(id) => openDetail(id)}/> : tab === "home" ? <>

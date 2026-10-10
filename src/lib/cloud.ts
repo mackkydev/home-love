@@ -200,16 +200,16 @@ async function prepareEntry<T extends CloudEntry>(entry: T, householdId: string)
 async function displayEntry<T extends CloudEntry>(entry: T): Promise<T> {
   const data = { ...entry };
   if (entry.photos?.length) {
-    data.photos = await Promise.all(entry.photos.map((photo) => photo.startsWith("storage:") ? visibleAsset(photo.slice(8)) : Promise.resolve(photo)));
+    data.photos = await Promise.all(entry.photos.map((photo) => photo.startsWith("storage:") ? visibleAsset(photo.slice(8)).catch(() => photo) : Promise.resolve(photo)));
     data.photo = data.photos[0];
   } else if (entry.photo?.startsWith("storage:")) {
-    data.photo = await visibleAsset(entry.photo.slice(8));
+    data.photo = await visibleAsset(entry.photo.slice(8)).catch(() => entry.photo!);
     data.photos = [data.photo];
   }
   if (entry.attachments?.length) {
     data.attachments = await Promise.all(entry.attachments.map(async (file) => ({
       ...file,
-      data: file.data.startsWith("storage:") ? await visibleAsset(file.data.slice(8)) : file.data,
+      data: file.data.startsWith("storage:") ? await visibleAsset(file.data.slice(8)).catch(() => file.data) : file.data,
     })));
   }
   return data;
@@ -243,6 +243,14 @@ export async function joinHousehold(inviteCode: string): Promise<string> {
   const { data, error } = await cloud.rpc("join_household_by_code", { invite_code: inviteCode.trim() });
   if (error || !data) throw error ?? new Error("Cannot join household");
   return data as string;
+}
+
+export async function renameHousehold(householdId: string, name: string): Promise<void> {
+  if (!cloud) throw new Error("Supabase is not configured");
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > 60) throw new Error("กรุณาตั้งชื่อบ้านไม่เกิน 60 ตัวอักษร");
+  const { data, error } = await cloud.from("households").update({ name: trimmed }).eq("id", householdId).select("id").maybeSingle();
+  if (error || !data) throw error ?? new Error("ไม่สามารถเปลี่ยนชื่อบ้านได้");
 }
 
 export async function openHousehold<T extends CloudEntry>(selectedId?: string): Promise<{ householdId: string; snapshot: CloudSnapshot<T> }> {

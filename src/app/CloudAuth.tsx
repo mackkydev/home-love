@@ -10,12 +10,14 @@ export default function CloudAuth({
   recoveryMode,
   language,
   cloudError,
+  onRetry,
   onRecoveryComplete,
 }: {
   checking: boolean;
   recoveryMode: boolean;
   language: "th" | "en";
   cloudError: string;
+  onRetry: () => void;
   onRecoveryComplete: () => void;
 }) {
   const [mode, setMode] = useState<AuthMode>("login");
@@ -95,7 +97,7 @@ export default function CloudAuth({
     <span className="brand-mark" aria-hidden="true">⌂</span>
     <h1>{en ? "Our Home" : "บ้านของเรา"}</h1>
     <p>{en ? "Keep your household records together, privately." : "บันทึกเรื่องในบ้านร่วมกันอย่างเป็นส่วนตัว"}</p>
-    {checking && !recoveryMode ? <><p>{en ? "Connecting to your household..." : "กำลังเชื่อมต่อข้อมูลของบ้าน..."}</p>{cloudError && <p className="cloud-error" role="alert">{cloudError}</p>}{cloudError && <button type="button" className="secondary-button" onClick={() => void cloud?.auth.signOut()}>{en ? "Sign out" : "ออกจากระบบ"}</button>}</> : <>
+    {checking && !recoveryMode ? <><p>{cloudError ? (en ? "Could not load your household." : "โหลดข้อมูลของบ้านไม่สำเร็จ") : (en ? "Connecting to your household..." : "กำลังเชื่อมต่อข้อมูลของบ้าน...")}</p>{cloudError && <p className="cloud-error" role="alert">{cloudError}</p>}{cloudError && <div className="cloud-auth-retry"><button type="button" className="primary-button" onClick={onRetry}>{en ? "Try again" : "ลองอีกครั้ง"}</button><button type="button" className="secondary-button" onClick={() => void cloud?.auth.signOut()}>{en ? "Sign out" : "ออกจากระบบ"}</button></div>}</> : <>
       <h2>{recoveryMode ? (en ? "Set a new password" : "ตั้งรหัสผ่านใหม่") : mode === "signup" ? (en ? "Register with password" : "สมัครด้วยรหัสผ่าน") : mode === "magic" ? signupOpen ? (en ? "Continue with email link" : "เข้าใช้ด้วยลิงก์อีเมล") : (en ? "Sign in with email link" : "เข้าสู่ระบบด้วยลิงก์อีเมล") : mode === "forgot" ? (en ? "Reset your password" : "ตั้งรหัสผ่านใหม่") : (en ? "Sign in" : "เข้าสู่ระบบ")}</h2>
       <form onSubmit={submit}>
         {!recoveryMode && <label className="form-label">{en ? "Email" : "อีเมล"}<input type="email" autoComplete="email" required placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)}/></label>}
