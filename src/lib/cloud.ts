@@ -29,6 +29,43 @@ export async function setSignupOpen(open: boolean): Promise<boolean> {
   return data === true;
 }
 
+export type SignupMethods = "both" | "password" | "email_link";
+
+export async function getSignupMethods(): Promise<SignupMethods> {
+  if (!cloud) return "both";
+  const { data, error } = await cloud.rpc("get_signup_methods");
+  if (error) throw error;
+  return data === "password" || data === "email_link" ? data : "both";
+}
+
+export async function setSignupMethods(methods: SignupMethods): Promise<SignupMethods> {
+  if (!cloud) throw new Error("Supabase is not configured");
+  const { data, error } = await cloud.rpc("set_signup_methods", { new_value: methods });
+  if (error) throw error;
+  return data as SignupMethods;
+}
+
+export async function hasDevicePin(): Promise<boolean> {
+  if (!cloud) return false;
+  const { data, error } = await cloud.rpc("has_device_pin");
+  if (error) throw error;
+  return data === true;
+}
+
+export async function verifyDevicePin(pin: string): Promise<boolean> {
+  if (!cloud) return false;
+  const { data, error } = await cloud.rpc("verify_device_pin", { candidate: pin });
+  if (error) throw error;
+  return data === true;
+}
+
+export async function setDevicePin(pin: string, currentPin?: string): Promise<boolean> {
+  if (!cloud) return false;
+  const { data, error } = await cloud.rpc("set_device_pin", { new_pin: pin, current_pin: currentPin ?? null });
+  if (error) throw error;
+  return data === true;
+}
+
 export type CloudCategory = { name: string; icon: string; color: string };
 export type Household = { id: string; name: string; role: "owner" | "admin" | "member" };
 export type CloudEntry = {

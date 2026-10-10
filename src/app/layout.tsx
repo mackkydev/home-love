@@ -22,7 +22,17 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, view
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="th" className={notoThai.variable}>
+    <html lang="th" className={notoThai.variable} suppressHydrationWarning>
+      <head><script dangerouslySetInnerHTML={{ __html: `try {
+        const root = document.documentElement;
+        const savedTheme = localStorage.getItem('baanjai-theme');
+        root.dataset.theme = savedTheme === 'dark' || (savedTheme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        const accent = localStorage.getItem('baanjai-accent');
+        if (['blue','violet','green','rose','pink','gray','gold','custom'].includes(accent)) root.dataset.accent = accent;
+        root.dataset.palette = localStorage.getItem('baanjai-palette') === 'pastel' ? 'pastel' : 'normal';
+        const custom = localStorage.getItem('baanjai-custom-color');
+        if (accent === 'custom' && /^#[0-9a-f]{6}$/i.test(custom || '')) root.style.setProperty('--blue', custom);
+      } catch (_) {}` }} /></head>
       <body>{children}</body>
     </html>
   );

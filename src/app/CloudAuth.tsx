@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { cloud, getSignupOpen } from "@/lib/cloud";
+import { cloud, getSignupMethods, getSignupOpen, type SignupMethods } from "@/lib/cloud";
 
 type AuthMode = "login" | "signup" | "magic" | "forgot";
 
@@ -26,11 +26,13 @@ export default function CloudAuth({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [signupOpen, setSignupOpenState] = useState<boolean | null>(null);
+  const [signupMethods, setSignupMethodsState] = useState<SignupMethods>("both");
   const en = language === "en";
 
   useEffect(() => {
     let active = true;
     void getSignupOpen().then((open) => { if (active) setSignupOpenState(open); }).catch(() => { if (active) setSignupOpenState(true); });
+    void getSignupMethods().then((methods) => { if (active) setSignupMethodsState(methods); }).catch(() => { /* Keep the previous default until the migration is applied. */ });
     return () => { active = false; };
   }, []);
 
@@ -65,7 +67,7 @@ export default function CloudAuth({
         const { error: authError } = await cloud.auth.signInWithPassword({ email: email.trim(), password });
         if (authError) throw authError;
       } else if (mode === "signup") {
-        if (signupOpen !== true) throw new Error(en ? "Registration is closed." : "ขณะนี้ปิดรับสมัครสมาชิก");
+        if (signupOpen !== true || signupMethods === "email_link") throw new Error(en ? "Password registration is unavailable." : "ขณะนี้ไม่เปิดรับสมัครด้วยรหัสผ่าน");
         const { data, error: authError } = await cloud.auth.signUp({
           email: email.trim(),
           password,
@@ -74,7 +76,7 @@ export default function CloudAuth({
         if (authError) throw authError;
         if (!data.session) setMessage(en ? "Check your email to confirm your account, then sign in." : "ตรวจอีเมลเพื่อยืนยันบัญชี แล้วกลับมาเข้าสู่ระบบ");
       } else if (mode === "magic") {
-        const { error: authError } = await cloud.auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: signupOpen === true, emailRedirectTo: window.location.origin } });
+        const { error: authError } = await cloud.auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: signupOpen === true && signupMethods !== "password", emailRedirectTo: window.location.origin } });
         if (authError) throw authError;
         setMessage(en ? "Check your email for a sign-in link." : "ตรวจอีเมลเพื่อเปิดลิงก์เข้าสู่ระบบ");
       } else {
@@ -107,7 +109,7 @@ export default function CloudAuth({
         {mode !== "login" && <button type="button" onClick={() => changeMode("login")}>{en ? "Back to sign in" : "กลับไปเข้าสู่ระบบ"}</button>}
         {mode === "login" && <><button type="button" onClick={() => changeMode("magic")}>{en ? "Email sign-in link" : "เข้าด้วยลิงก์อีเมล"}</button><button type="button" onClick={() => changeMode("forgot")}>{en ? "Forgot password?" : "ลืมรหัสผ่าน"}</button></>}
       </div>}
-      {!recoveryMode && mode === "login" && signupOpen === true && <div className="cloud-auth-signup-options"><span>{en ? "New here? Choose how to register" : "ยังไม่มีบัญชี? เลือกวิธีสมัคร"}</span><button type="button" onClick={() => changeMode("signup")}>{en ? "With password" : "สมัครด้วยรหัสผ่าน"}</button><button type="button" onClick={() => changeMode("magic")}>{en ? "With email link" : "รับลิงก์ทางอีเมล"}</button></div>}
+      {!recoveryMode && mode === "login" && signupOpen === true && <div className="cloud-auth-signup-options"><span>{en ? "New here? Choose how to register" : "ยังไม่มีบัญชี? เลือกวิธีสมัคร"}</span>{signupMethods !== "email_link" && <button type="button" onClick={() => changeMode("signup")}>{en ? "With password" : "สมัครด้วยรหัสผ่าน"}</button>}{signupMethods !== "password" && <button type="button" onClick={() => changeMode("magic")}>{en ? "With email link" : "รับลิงก์ทางอีเมล"}</button>}</div>}
       {!recoveryMode && signupOpen === false && <p className="cloud-signup-closed" role="status">{en ? "New registrations are currently closed. Existing members can still sign in." : "ขณะนี้ปิดรับสมัครสมาชิก สมาชิกเดิมยังเข้าสู่ระบบได้"}</p>}
     </>}
     <small>{en ? "Your household data is protected by your account." : "ข้อมูลของบ้านจะเปิดให้เฉพาะบัญชีที่เป็นสมาชิก"}</small>

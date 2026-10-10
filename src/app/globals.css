@@ -553,3 +553,32 @@ body{font-size:17px}
   .detail-page .entry-actions .consume-button,.detail-page .entry-actions .renew-button{width:auto;min-height:36px}
 }
 [data-theme="dark"] html{background:#151f35}
+/* Keep the mobile header outside the scrolling content on every main tab. */
+@media(max-width:760px){
+  html,body{background:var(--blue)}
+  .main-column{height:calc(100dvh - 76px);display:flex;flex-direction:column;overflow:hidden}
+  .topbar,.is-list-view .topbar{position:relative;flex:none;z-index:6;background:var(--blue);box-shadow:0 1px 0 #ffffff26}
+  .content-area{width:100%;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  .is-list-view .content-area{overflow:hidden}
+  html[data-theme="dark"],[data-theme="dark"] body{background:#151f35}
+  [data-theme="dark"] .topbar{background:#151f35}
+  body::before{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top);background:var(--blue);pointer-events:none}
+  [data-theme="dark"] body::before{background:#151f35}
+}
+.admin-methods-card{margin-top:12px;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.admin-methods-card>strong{display:block;font-size:15px}
+.admin-methods-card>p{margin:6px 0 13px;color:var(--muted);font-size:13px}
+.admin-methods-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.admin-methods-options button{min-height:44px;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--surface);font-size:12px;font-weight:700}
+.admin-methods-options button.selected{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 10%,var(--surface));color:var(--blue)}
+.admin-methods-options button:disabled{opacity:.6;cursor:wait}
+@media(max-width:420px){.admin-methods-options{grid-template-columns:1fr}}
+.cloud-auth-signup-options button:only-of-type{grid-column:1/-1}
+.pin-lock-card .form-label input{font-size:22px;letter-spacing:.35em;text-align:center}
+.pin-lock-signout,.pin-enable-device{display:block;width:100%;margin-top:13px;padding:9px 12px;border:0;background:transparent;color:var(--blue);font-size:13px;font-weight:700;text-align:center}
+.pin-enable-device{width:auto;padding-left:0;text-align:left}
+.pin-enable-device:disabled{opacity:.5}
+@media(max-width:760px){
+  .cloud-auth-page{position:fixed;inset:0;min-height:0;height:100dvh;overflow:hidden;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom))}
+  .cloud-auth-card{max-height:100%;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+}

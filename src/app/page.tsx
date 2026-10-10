@@ -5,6 +5,7 @@ import { cloud, cloudEnabled, createHouseholdInvite, createPortableBackup, isApp
 import CloudAuth from "./CloudAuth";
 import HouseholdPanel from "./HouseholdPanel";
 import AdminPanel from "./AdminPanel";
+import PinLock from "./PinLock";
 
 type Tab = "home" | "items" | "services" | "history";
 type AppTheme = "light" | "dark" | "system";
@@ -127,6 +128,7 @@ export default function Home() {
   const [households, setHouseholds] = useState<Household[]>([]);
   const [showHouseholds, setShowHouseholds] = useState(false);
   const [appAdmin, setAppAdmin] = useState(false);
+  const [deviceLocked, setDeviceLocked] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
   const [householdBusy, setHouseholdBusy] = useState(false);
@@ -220,11 +222,20 @@ export default function Home() {
       if (!active) return;
       if (event === "PASSWORD_RECOVERY") setRecoveryMode(true);
       setAuthStatus(session ? "signed-in" : "signed-out");
-      if (session && loadedUser.current !== session.user.id) { loadedUser.current = session.user.id; setTimeout(() => { if (active) { void loadHouseholdData(undefined, session.user.id).catch((error) => setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ")); void isAppAdmin().then((value) => { if (active && loadedUser.current === session.user.id) setAppAdmin(value); }).catch(() => setAppAdmin(false)); } }, 0); }
-      if (!session) { loadedUser.current = ""; setAppAdmin(false); setShowAdmin(false); setShowHouseholds(false); setRecoveryMode(false); setCloudReady(false); setCloudError(""); setHouseholdId(""); setHouseholds([]); setPendingLocalImport(null); cloudSnapshot.current = null; activeHouseholdRef.current = ""; }
+      if (session && loadedUser.current !== session.user.id) { loadedUser.current = session.user.id; setDeviceLocked(event === "INITIAL_SESSION" && localStorage.getItem(`baanjai-pin-device-${session.user.id}`) === "enabled"); setTimeout(() => { if (active) { void loadHouseholdData(undefined, session.user.id).catch((error) => setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ")); void isAppAdmin().then((value) => { if (active && loadedUser.current === session.user.id) setAppAdmin(value); }).catch(() => setAppAdmin(false)); } }, 0); }
+      if (!session) { loadedUser.current = ""; setDeviceLocked(false); setAppAdmin(false); setShowAdmin(false); setShowHouseholds(false); setRecoveryMode(false); setCloudReady(false); setCloudError(""); setHouseholdId(""); setHouseholds([]); setPendingLocalImport(null); cloudSnapshot.current = null; activeHouseholdRef.current = ""; }
     });
     return () => { active = false; data.subscription.unsubscribe(); };
   }, [loadHouseholdData]);
+  useEffect(() => {
+    let hiddenAt = 0;
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") hiddenAt = Date.now();
+      else if (hiddenAt && Date.now() - hiddenAt > 30_000 && loadedUser.current && localStorage.getItem(`baanjai-pin-device-${loadedUser.current}`) === "enabled") setDeviceLocked(true);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
   useEffect(() => {
     if (!cloudReady || !householdId || !cloudSnapshot.current) return;
     const timer = setTimeout(() => {
@@ -455,6 +466,7 @@ export default function Home() {
   const displayEntries = tab === "services" ? filteredEntries.filter((entry) => entry.kind === "service") : tab === "items" ? filteredEntries.filter((entry) => entry.kind === "item") : tab === "history" ? filteredEntries : [];
 
   if (cloudEnabled && (recoveryMode || !cloudReady || authStatus !== "signed-in")) return <CloudAuth checking={authStatus === "checking" || (authStatus === "signed-in" && !cloudReady)} recoveryMode={recoveryMode} language={language} cloudError={cloudError} onRecoveryComplete={() => setRecoveryMode(false)}/>;
+  if (cloudEnabled && deviceLocked) return <PinLock language={language} onUnlock={() => setDeviceLocked(false)}/>;
 
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId);
   return <main className={`app-shell ${tab !== "home" ? "is-list-view" : ""}`}>
@@ -504,7 +516,7 @@ export default function Home() {
       <div className="detail-page-body">{selectedEntry ? <EntryRow entry={selectedEntry} language={language} detailMode onDeletePhoto={(index) => setPhotoDeleteTarget({ kind: "entry", entryId: selectedEntry.id, index })} onConsume={() => consumed(selectedEntry)} onStockUse={() => recordStockUse(selectedEntry)} onEdit={() => editEntry(selectedEntry)} onRenew={() => renewService(selectedEntry)} onRemove={() => removeEntry(selectedEntry)} onProgressStyle={(style) => setEntries((prev) => prev.map((entry) => entry.id === selectedEntry.id ? { ...entry, progressStyle: style } : entry))}/> : <div className="empty-state"><strong>{ui("ไม่พบรายการนี้", "Record not found")}</strong><button type="button" className="primary-button" onClick={closeDetail}>{ui("กลับ", "Back")}</button></div>}</div>
     </section>}
 
-    {cloudEnabled && showHouseholds && <HouseholdPanel houses={households} activeId={householdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} isAdmin={appAdmin} onOpenAdmin={() => { setShowHouseholds(false); setShowAdmin(true); }} onClose={() => { setShowHouseholds(false); setHouseholdError(""); }} onSwitch={(id) => void switchHousehold(id)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => { setShowHouseholds(false); if (cloud) void cloud.auth.signOut(); }}/>}
+    {cloudEnabled && showHouseholds && <HouseholdPanel houses={households} activeId={householdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} isAdmin={appAdmin} onOpenAdmin={() => { setShowHouseholds(false); setShowAdmin(true); }} onClose={() => { setShowHouseholds(false); setHouseholdError(""); }} onSwitch={(id) => void switchHousehold(id)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => { setShowHouseholds(false); if (cloud) void cloud.auth.signOut(); }}/>}
     {cloudEnabled && appAdmin && showAdmin && <AdminPanel language={language} onClose={() => setShowAdmin(false)}/>}
 
     {modal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { setModal(null); setEditingEntry(null); } }}>
