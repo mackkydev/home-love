@@ -310,7 +310,7 @@ export default function Home() {
       const body = `เหลือประมาณ ${currency(quantity)} ${entry.stock?.unit} · ${stockRunoutLabel(days, language, stockRunoutDate(entry.stock))}`;
       try {
         const registrationPromise = "serviceWorker" in navigator ? navigator.serviceWorker.getRegistration() : Promise.resolve(undefined);
-        void registrationPromise.then((registration) => registration?.showNotification ? registration.showNotification(title, { body, tag: key, icon: "/icon.svg" }) : Promise.resolve().then(() => { new Notification(title, { body, tag: key }); })).then(() => localStorage.setItem(key, "shown")).catch(() => undefined);
+        void registrationPromise.then((registration) => registration?.showNotification ? registration.showNotification(title, { body, tag: key, icon: "/icon-192.png" }) : Promise.resolve().then(() => { new Notification(title, { body, tag: key }); })).then(() => localStorage.setItem(key, "shown")).catch(() => undefined);
       } catch { /* Browser notifications are optional; the in-app alert remains available. */ }
     }
   }, [ready, notificationPermission, stockAlerts]);
