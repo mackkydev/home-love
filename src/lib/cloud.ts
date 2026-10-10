@@ -9,6 +9,7 @@ export const cloud = url && key ? createClient(url, key, {
 }) : null;
 
 export type CloudCategory = { name: string; icon: string; color: string };
+export type Household = { id: string; name: string; role: "owner" | "admin" | "member" };
 export type CloudEntry = {
   id: string;
   photos?: string[];
@@ -89,10 +90,47 @@ async function displayEntry<T extends CloudEntry>(entry: T): Promise<T> {
   return data;
 }
 
-export async function openHousehold<T extends CloudEntry>(): Promise<{ householdId: string; snapshot: CloudSnapshot<T> }> {
+export async function listHouseholds(): Promise<Household[]> {
   if (!cloud) throw new Error("Supabase is not configured");
-  const { data: householdId, error: householdError } = await cloud.rpc("ensure_personal_household");
-  if (householdError || !householdId) throw householdError ?? new Error("Cannot create household");
+  const { data: defaultId, error: defaultError } = await cloud.rpc("ensure_personal_household");
+  if (defaultError || !defaultId) throw defaultError ?? new Error("Cannot create household");
+  const { data: memberships, error: memberError } = await cloud.from("household_members").select("household_id,role");
+  if (memberError) throw memberError;
+  if (!memberships?.length) return [];
+  const { data: houses, error: houseError } = await cloud.from("households").select("id,name").in("id", memberships.map((item) => item.household_id));
+  if (houseError) throw houseError;
+  return (houses ?? []).map((house) => ({
+    id: house.id,
+    name: house.name,
+    role: memberships.find((item) => item.household_id === house.id)!.role as Household["role"],
+  })).sort((a, b) => Number(b.id === defaultId) - Number(a.id === defaultId));
+}
+
+export async function createHouseholdInvite(householdId: string): Promise<string> {
+  if (!cloud) throw new Error("Supabase is not configured");
+  const { data, error } = await cloud.rpc("create_household_invite", { target_household: householdId });
+  if (error || !data) throw error ?? new Error("Cannot create an invitation");
+  return data as string;
+}
+
+export async function joinHousehold(inviteCode: string): Promise<string> {
+  if (!cloud) throw new Error("Supabase is not configured");
+  const { data, error } = await cloud.rpc("join_household_by_code", { invite_code: inviteCode.trim() });
+  if (error || !data) throw error ?? new Error("Cannot join household");
+  return data as string;
+}
+
+export async function openHousehold<T extends CloudEntry>(selectedId?: string): Promise<{ householdId: string; snapshot: CloudSnapshot<T> }> {
+  if (!cloud) throw new Error("Supabase is not configured");
+  const { data: defaultId, error: householdError } = await cloud.rpc("ensure_personal_household");
+  if (householdError || !defaultId) throw householdError ?? new Error("Cannot create household");
+  let householdId = defaultId as string;
+  if (selectedId && selectedId !== defaultId) {
+    const { data: membership, error: memberError } = await cloud.from("household_members").select("household_id").eq("household_id", selectedId).maybeSingle();
+    if (memberError) throw memberError;
+    if (!membership) throw new Error("You are not a member of this household");
+    householdId = selectedId;
+  }
   const [entriesResult, categoriesResult] = await Promise.all([
     cloud.from("entries").select("id,data").eq("household_id", householdId),
     cloud.from("household_categories").select("name,icon,color").eq("household_id", householdId),

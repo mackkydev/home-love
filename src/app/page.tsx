@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { cloud, cloudEnabled, openHousehold, saveHousehold, type CloudSnapshot } from "@/lib/cloud";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { cloud, cloudEnabled, createHouseholdInvite, joinHousehold, listHouseholds, openHousehold, saveHousehold, type CloudSnapshot, type Household } from "@/lib/cloud";
+import CloudAuth from "./CloudAuth";
+import HouseholdPanel from "./HouseholdPanel";
 
 type Tab = "home" | "items" | "services" | "history";
 type AppTheme = "light" | "dark" | "system";
@@ -114,16 +116,22 @@ export default function Home() {
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
   const [ready, setReady] = useState(false);
   const [authStatus, setAuthStatus] = useState<"checking" | "signed-out" | "signed-in">(cloudEnabled ? "checking" : "signed-in");
-  const [authEmail, setAuthEmail] = useState("");
-  const [emailSent, setEmailSent] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
   const [cloudError, setCloudError] = useState("");
   const [cloudSaving, setCloudSaving] = useState(false);
   const [syncRevision, setSyncRevision] = useState(0);
   const [pendingLocalImport, setPendingLocalImport] = useState<{ entries: Entry[]; categories: { name: string; icon: string; color: string }[] } | null>(null);
   const [householdId, setHouseholdId] = useState("");
+  const [households, setHouseholds] = useState<Household[]>([]);
+  const [showHouseholds, setShowHouseholds] = useState(false);
+  const [inviteCode, setInviteCode] = useState("");
+  const [householdBusy, setHouseholdBusy] = useState(false);
+  const [householdError, setHouseholdError] = useState("");
   const cloudSnapshot = useRef<CloudSnapshot<Entry> | null>(null);
   const cloudQueue = useRef<Promise<void>>(Promise.resolve());
+  const activeHouseholdRef = useRef("");
+  const switchingHouseholdRef = useRef(false);
   const loadedUser = useRef("");
   const [todayValue, setTodayValue] = useState("2026-10-09");
   const [modal, setModal] = useState<"item" | "service" | "note" | "category" | "edit" | "renew" | null>(null);
@@ -159,8 +167,8 @@ export default function Home() {
     if (savedPalette === "normal" || savedPalette === "pastel") setPaletteMode(savedPalette);
     if (savedCustomColor && /^#[0-9a-f]{6}$/i.test(savedCustomColor)) setCustomColor(savedCustomColor);
     if (savedLanguage === "th" || savedLanguage === "en") setLanguage(savedLanguage);
-    if (savedCategories) { try { setExtraCategories(JSON.parse(savedCategories) as { name: string; icon: string; color: string }[]); } catch { localStorage.removeItem("baanjai-categories-v1"); } }
-    if (saved) {
+    if (!cloudEnabled && savedCategories) { try { setExtraCategories(JSON.parse(savedCategories) as { name: string; icon: string; color: string }[]); } catch { localStorage.removeItem("baanjai-categories-v1"); } }
+    if (!cloudEnabled && saved) {
       try { setEntries(JSON.parse(saved) as Entry[]); } catch { localStorage.removeItem("baanjai-entries-v1"); }
     }
     setReady(true);
@@ -170,47 +178,55 @@ export default function Home() {
   useEffect(() => { if ("Notification" in window) setNotificationPermission(Notification.permission); else setNotificationPermission("unsupported"); const timer = setInterval(() => setTodayValue(today()), 60_000); return () => clearInterval(timer); }, []);
   useEffect(() => { if (!ready || cloudEnabled) return; try { localStorage.setItem("baanjai-entries-v1", JSON.stringify(entries)); } catch { setNotice("พื้นที่บันทึกรูปเต็ม กรุณาสำรองข้อมูลหรือลบรูปเก่าก่อน"); } }, [entries, ready]);
   useEffect(() => { if (ready && !cloudEnabled) localStorage.setItem("baanjai-categories-v1", JSON.stringify(extraCategories)); }, [extraCategories, ready]);
+  const loadHouseholdData = useCallback(async (requestedId?: string, userId = loadedUser.current) => {
+    if (!userId) return;
+    setCloudReady(false);
+    setCloudError("");
+    const list = await listHouseholds();
+    if (userId !== loadedUser.current) return;
+    const storageKey = `baanjai-active-household-${userId}`;
+    const preferredId = requestedId ?? localStorage.getItem(storageKey);
+    const selectedId = list.find((house) => house.id === preferredId)?.id ?? list[0]?.id;
+    if (!selectedId) throw new Error("No household is available");
+    const { householdId: id, snapshot } = await openHousehold<Entry>(selectedId);
+    if (userId !== loadedUser.current) return;
+    localStorage.setItem(storageKey, id);
+    cloudSnapshot.current = snapshot;
+    activeHouseholdRef.current = id;
+    setHouseholds(list);
+    setHouseholdId(id);
+    const savedEntries = localStorage.getItem("baanjai-entries-v1");
+    const savedCategories = localStorage.getItem("baanjai-categories-v1");
+    let localEntries: Entry[] = [];
+    let localCategories: { name: string; icon: string; color: string }[] = [];
+    try { if (savedEntries) localEntries = JSON.parse(savedEntries) as Entry[]; } catch { /* Keep cloud data available if an old backup is invalid. */ }
+    try { if (savedCategories) localCategories = JSON.parse(savedCategories) as { name: string; icon: string; color: string }[]; } catch { /* Keep cloud data available if an old backup is invalid. */ }
+    const hasRealLocalData = JSON.stringify(localEntries) !== JSON.stringify(initialEntries);
+    setPendingLocalImport(snapshot.entries.length === 0 && hasRealLocalData && localEntries.length > 0 ? { entries: localEntries, categories: localCategories } : null);
+    setEntries(snapshot.entries.sort((a, b) => b.date.localeCompare(a.date)));
+    setExtraCategories(snapshot.categories);
+    setCloudReady(true);
+  }, []);
   useEffect(() => {
     if (!cloud) return;
     let active = true;
-    const load = async () => {
-      try {
-        setCloudReady(false);
-        setCloudError("");
-        const { householdId: id, snapshot } = await openHousehold<Entry>();
-        if (!active) return;
-        cloudSnapshot.current = snapshot;
-        setHouseholdId(id);
-        const savedEntries = localStorage.getItem("baanjai-entries-v1");
-        const savedCategories = localStorage.getItem("baanjai-categories-v1");
-        let localEntries: Entry[] = [];
-        let localCategories: { name: string; icon: string; color: string }[] = [];
-        try { if (savedEntries) localEntries = JSON.parse(savedEntries) as Entry[]; } catch { /* Keep cloud data available if an old backup is invalid. */ }
-        try { if (savedCategories) localCategories = JSON.parse(savedCategories) as { name: string; icon: string; color: string }[]; } catch { /* Keep cloud data available if an old backup is invalid. */ }
-        const hasRealLocalData = JSON.stringify(localEntries) !== JSON.stringify(initialEntries);
-        setPendingLocalImport(snapshot.entries.length === 0 && hasRealLocalData && localEntries.length > 0 ? { entries: localEntries, categories: localCategories } : null);
-        setEntries(snapshot.entries.sort((a, b) => b.date.localeCompare(a.date)));
-        setExtraCategories(snapshot.categories);
-        setCloudReady(true);
-      } catch (error) {
-        if (active) setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ");
-      }
-    };
     const { data } = cloud.auth.onAuthStateChange((event, session) => {
       if (!active) return;
+      if (event === "PASSWORD_RECOVERY") setRecoveryMode(true);
       setAuthStatus(session ? "signed-in" : "signed-out");
-      if (session && loadedUser.current !== session.user.id) { loadedUser.current = session.user.id; setTimeout(() => { if (active) void load(); }, 0); }
-      if (!session) { loadedUser.current = ""; setCloudReady(false); setHouseholdId(""); setPendingLocalImport(null); cloudSnapshot.current = null; }
+      if (session && loadedUser.current !== session.user.id) { loadedUser.current = session.user.id; setTimeout(() => { if (active) void loadHouseholdData(undefined, session.user.id).catch((error) => setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ")); }, 0); }
+      if (!session) { loadedUser.current = ""; setRecoveryMode(false); setCloudReady(false); setCloudError(""); setHouseholdId(""); setHouseholds([]); setPendingLocalImport(null); cloudSnapshot.current = null; activeHouseholdRef.current = ""; }
     });
     return () => { active = false; data.subscription.unsubscribe(); };
-  }, []);
+  }, [loadHouseholdData]);
   useEffect(() => {
     if (!cloudReady || !householdId || !cloudSnapshot.current) return;
     const timer = setTimeout(() => {
+      if (switchingHouseholdRef.current || householdId !== activeHouseholdRef.current) return;
       const currentEntries = entries;
       const currentCategories = extraCategories;
       cloudQueue.current = cloudQueue.current.catch(() => undefined).then(async () => {
-        if (!cloudSnapshot.current) return;
+        if (!cloudSnapshot.current || householdId !== activeHouseholdRef.current || switchingHouseholdRef.current) return;
         try {
           setCloudSaving(true);
           cloudSnapshot.current = await saveHousehold(householdId, currentEntries, currentCategories, cloudSnapshot.current);
@@ -336,36 +352,71 @@ export default function Home() {
   };
   const exportData = () => { const blob = new Blob([JSON.stringify(entries, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "baanjai-backup.json"; anchor.click(); URL.revokeObjectURL(url); setNotice("ดาวน์โหลดไฟล์สำรองแล้ว"); };
 
+  const flushCurrentHousehold = async () => {
+    switchingHouseholdRef.current = true;
+    await cloudQueue.current;
+    if (cloudSnapshot.current && householdId) cloudSnapshot.current = await saveHousehold(householdId, entries, extraCategories, cloudSnapshot.current);
+  };
+  const switchHousehold = async (id: string) => {
+    if (id === householdId) { setShowHouseholds(false); return; }
+    setHouseholdBusy(true);
+    setHouseholdError("");
+    try {
+      await flushCurrentHousehold();
+      await loadHouseholdData(id);
+      setInviteCode("");
+      setShowHouseholds(false);
+    } catch (error) {
+      setHouseholdError(error instanceof Error ? error.message : "เปลี่ยนบ้านไม่สำเร็จ");
+    } finally {
+      switchingHouseholdRef.current = false;
+      setHouseholdBusy(false);
+    }
+  };
+  const createInvite = async () => {
+    setHouseholdBusy(true);
+    setHouseholdError("");
+    try { setInviteCode(await createHouseholdInvite(householdId)); }
+    catch (error) { setHouseholdError(error instanceof Error ? error.message : "สร้างรหัสเชิญไม่สำเร็จ"); }
+    finally { setHouseholdBusy(false); }
+  };
+  const joinWithCode = async (code: string) => {
+    setHouseholdBusy(true);
+    setHouseholdError("");
+    try {
+      await flushCurrentHousehold();
+      const id = await joinHousehold(code);
+      await loadHouseholdData(id);
+      setInviteCode("");
+      setShowHouseholds(false);
+      setNotice(language === "en" ? "Joined the household" : "เข้าร่วมบ้านแล้ว");
+    } catch (error) {
+      setHouseholdError(error instanceof Error ? error.message : "เข้าร่วมบ้านไม่สำเร็จ");
+    } finally {
+      switchingHouseholdRef.current = false;
+      setHouseholdBusy(false);
+    }
+  };
+
   const navItems: { id: Tab; label: string; icon: string }[] = [{ id: "home", label: copy.home, icon: "home" }, { id: "items", label: copy.items, icon: "bag" }, { id: "services", label: copy.services, icon: "ticket" }, { id: "history", label: copy.history, icon: "clock" }];
   const displayEntries = tab === "services" ? filteredEntries.filter((entry) => entry.kind === "service") : tab === "items" ? filteredEntries.filter((entry) => entry.kind === "item") : tab === "history" ? filteredEntries : [];
 
-  if (cloudEnabled && (!cloudReady || authStatus !== "signed-in")) return <main className="cloud-auth-page"><section className="cloud-auth-card">
-    <span className="brand-mark"><Icon name="home" size={23}/></span>
-    <h1>บ้านใจ</h1><p>บันทึกเรื่องในบ้านร่วมกันอย่างเป็นส่วนตัว</p>
-    {authStatus === "signed-out" ? <form onSubmit={async (event) => {
-      event.preventDefault();
-      if (!cloud || !authEmail.trim()) return;
-      const { error } = await cloud.auth.signInWithOtp({ email: authEmail.trim(), options: { emailRedirectTo: window.location.origin } });
-      if (error) setCloudError(error.message); else { setCloudError(""); setEmailSent(true); }
-    }}><label className="form-label">อีเมล<input type="email" autoComplete="email" required placeholder="you@example.com" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)}/></label><button className="primary-button" type="submit">ส่งลิงก์เข้าสู่ระบบ</button>{emailSent && <p className="cloud-auth-success">ส่งลิงก์แล้ว กรุณาเปิดอีเมลเพื่อเข้าสู่ระบบ</p>}</form> : <p>กำลังเชื่อมต่อข้อมูลครอบครัว...</p>}
-    {cloudError && <p className="cloud-error" role="alert">{cloudError}</p>}
-    <small>ข้อมูลของแต่ละครอบครัวถูกแยกตามบัญชีที่เข้าสู่ระบบ</small>
-  </section></main>;
+  if (cloudEnabled && (recoveryMode || !cloudReady || authStatus !== "signed-in")) return <CloudAuth checking={authStatus === "checking" || (authStatus === "signed-in" && !cloudReady)} recoveryMode={recoveryMode} language={language} cloudError={cloudError} onRecoveryComplete={() => setRecoveryMode(false)}/>;
 
   return <main className="app-shell">
     <aside className="sidebar">
       <a className="brand" href="#home" onClick={() => setTab("home")}><span className="brand-mark"><Icon name="home" size={21}/></span><span><strong>บ้านใจ</strong><small>HOME ORGANIZER</small></span></a>
-      <div className="house-switch"><div className="house-avatar">บ</div><div className="house-details"><span>{ui("พื้นที่ครอบครัว", "Family space")}</span><strong>{ui("บ้านของเรา", "Our home")}</strong></div><Icon name="chevron" size={16}/></div>
+      <button type="button" className="house-switch" disabled={!cloudEnabled} onClick={() => setShowHouseholds(true)}><div className="house-avatar">บ</div><div className="house-details"><span>{ui("พื้นที่ครอบครัว", "Family space")}</span><strong>{households.find((house) => house.id === householdId)?.name ?? ui("บ้านของเรา", "Our home")}</strong></div><Icon name="chevron" size={16}/></button>
       <span className="nav-caption">{ui("เมนูหลัก", "Main menu")}</span>
       <nav className="side-nav">{navItems.map((item) => <button key={item.id} className={`nav-link ${tab === item.id ? "active" : ""}`} onClick={() => setTab(item.id)}><Icon name={item.icon === "ticket" ? "spark" : item.icon}/><span>{item.label}</span>{item.id === "services" && <small>{activeServices.length}</small>}</button>)}</nav>
       <span className="nav-caption category-caption">{copy.categories}</span>
       <nav className="side-nav category-nav">{[...categories.slice(1), ...extraCategories].map((item) => <button key={item.name} className={`nav-link ${category === item.name ? "active" : ""}`} onClick={() => { setCategory(category === item.name ? "ทั้งหมด" : item.name); setTab("items"); }}><span className={`category-dot ${item.color}`}></span><span>{categoryLabel(item.name, language)}</span></button>)}<button className="add-category" onClick={() => { setForm({ ...form, name: "" }); setModal("category"); }}><span>＋</span> {ui("เพิ่มหมวดหมู่", "Add category")}</button></nav>
-      <div className="sidebar-spacer"/><div className="tip-card"><span className="tip-icon"><Icon name="shield" size={17}/></span><strong>{ui("ข้อมูลอยู่ในเครื่องนี้", "Data stays on this device")}</strong><p>{ui("อย่าลืมสำรองข้อมูลไว้ เผื่อเปลี่ยนเครื่องนะ", "Back up your records before changing devices.")}</p><button onClick={exportData}>{ui("สำรองข้อมูล", "Back up data")} <Icon name="arrow" size={14}/></button></div>
-      <button className="profile-row" onClick={() => { if (cloud) void cloud.auth.signOut(); }}><span className="avatar">ค</span><span className="profile-copy"><strong>{ui("คุณ", "You")}</strong><small>{cloudEnabled ? ui("ออกจากระบบ", "Sign out") : ui("สมาชิกครอบครัว", "Family member")}</small></span><Icon name="dots" size={18}/></button>
+      <div className="sidebar-spacer"/><div className="tip-card"><span className="tip-icon"><Icon name="shield" size={17}/></span><strong>{cloudEnabled ? ui("ข้อมูลบันทึกออนไลน์", "Data saved online") : ui("ข้อมูลอยู่ในเครื่องนี้", "Data stays on this device")}</strong><p>{ui("สำรองข้อมูลเพิ่มเติมไว้ได้ทุกเมื่อ", "You can export an extra backup anytime.")}</p><button onClick={exportData}>{ui("สำรองข้อมูล", "Back up data")} <Icon name="arrow" size={14}/></button></div>
+      <button className="profile-row" onClick={() => cloudEnabled && setShowHouseholds(true)}><span className="avatar">ค</span><span className="profile-copy"><strong>{ui("คุณ", "You")}</strong><small>{cloudEnabled ? ui("จัดการบัญชีและบ้าน", "Account and household") : ui("สมาชิกครอบครัว", "Family member")}</small></span><Icon name="dots" size={18}/></button>
     </aside>
 
     <section className="main-column" id="home">
-      <header className="topbar"><div className="breadcrumb">{ui("บ้านของเรา", "Our home")} <Icon name="chevron" size={15}/><strong>{navItems.find((item) => item.id === tab)?.label}</strong></div><div className="top-actions"><span className="sync-status"><i/> {cloudEnabled ? cloudError ? ui("ซิงก์มีปัญหา", "Sync issue") : cloudSaving ? ui("กำลังบันทึกออนไลน์", "Saving online") : ui("บันทึกออนไลน์", "Saved online") : copy.synced}</span><button className="icon-button preferences-button" type="button" aria-label={copy.preferences} aria-expanded={showPreferences} onClick={() => setShowPreferences((value) => !value)}><Icon name="dots"/></button><button className="icon-button notification-button" aria-label={ui(`การแจ้งเตือน ${stockAlerts.length} รายการใกล้หมด`, `${stockAlerts.length} low-stock alerts`)} aria-expanded={showAlerts} onClick={() => setShowAlerts((value) => !value)}><Icon name="bell"/>{stockAlerts.length > 0 && <span className="notification-count">{stockAlerts.length}</span>}</button><button className="avatar top-avatar" aria-label={ui("โปรไฟล์", "Profile")}>ค</button></div></header>
+      <header className="topbar"><div className="breadcrumb"><button type="button" className="breadcrumb-house" onClick={() => cloudEnabled && setShowHouseholds(true)}>{households.find((house) => house.id === householdId)?.name ?? ui("บ้านของเรา", "Our home")}</button><Icon name="chevron" size={15}/><strong>{navItems.find((item) => item.id === tab)?.label}</strong></div><div className="top-actions"><span className="sync-status"><i/> {cloudEnabled ? cloudError ? ui("ซิงก์มีปัญหา", "Sync issue") : cloudSaving ? ui("กำลังบันทึกออนไลน์", "Saving online") : ui("บันทึกออนไลน์", "Saved online") : copy.synced}</span><button className="icon-button preferences-button" type="button" aria-label={copy.preferences} aria-expanded={showPreferences} onClick={() => setShowPreferences((value) => !value)}><Icon name="dots"/></button><button className="icon-button notification-button" aria-label={ui(`การแจ้งเตือน ${stockAlerts.length} รายการใกล้หมด`, `${stockAlerts.length} low-stock alerts`)} aria-expanded={showAlerts} onClick={() => setShowAlerts((value) => !value)}><Icon name="bell"/>{stockAlerts.length > 0 && <span className="notification-count">{stockAlerts.length}</span>}</button><button className="avatar top-avatar" aria-label={ui("จัดการบัญชีและบ้าน", "Account and household")} onClick={() => cloudEnabled && setShowHouseholds(true)}>ค</button></div></header>
       {cloudError && <div className="cloud-sync-error" role="alert">{ui("บันทึกออนไลน์ไม่สำเร็จ", "Online save failed")}: {cloudError} <button type="button" onClick={() => setSyncRevision((value) => value + 1)}>{ui("ลองอีกครั้ง", "Retry")}</button></div>}
       {pendingLocalImport && <div className="cloud-import-banner"><span>{ui(`พบบันทึกเดิม ${pendingLocalImport.entries.length} รายการในเครื่องนี้`, `Found ${pendingLocalImport.entries.length} local records on this device`)}</span><button type="button" onClick={() => { setEntries(pendingLocalImport.entries); setExtraCategories(pendingLocalImport.categories); setPendingLocalImport(null); setNotice(ui("กำลังนำข้อมูลเดิมเข้าบัญชี", "Importing local records")); }}>{ui("นำเข้าบัญชี", "Import")}</button><button type="button" onClick={() => setPendingLocalImport(null)}>{ui("ภายหลัง", "Later")}</button></div>}
       {showPreferences && <section className="preferences-popover" aria-label={copy.preferences}><div className="preferences-heading"><strong>{copy.preferences}</strong><button type="button" aria-label={copy.close} onClick={() => setShowPreferences(false)}><Icon name="close" size={16}/></button></div><div className="preference-group"><span>{copy.appearance}</span><div className="theme-options appearance-options"><button type="button" className={theme === "light" ? "selected" : ""} onClick={() => setTheme("light")}>☀ {copy.light}</button><button type="button" className={theme === "dark" ? "selected" : ""} onClick={() => setTheme("dark")}>☾ {copy.dark}</button><button type="button" className={theme === "system" ? "selected" : ""} onClick={() => setTheme("system")}>◐ {language === "en" ? "System" : "ตามระบบ"}</button></div></div><div className="preference-group"><span>{language === "en" ? "Color style" : "รูปแบบโทนสี"}</span><div className="theme-options"><button type="button" className={paletteMode === "normal" ? "selected" : ""} onClick={() => setPaletteMode("normal")}>{language === "en" ? "Normal" : "ปกติ"}</button><button type="button" className={paletteMode === "pastel" ? "selected" : ""} onClick={() => setPaletteMode("pastel")}>{language === "en" ? "Pastel" : "พาสเทล"}</button></div></div><div className="preference-group"><span>{copy.color}</span><div className="accent-options">{(["blue", "violet", "green", "rose", "pink", "gray", "gold"] as Accent[]).map((color) => <button type="button" key={color} className={`${color} ${accent === color ? "selected" : ""}`} onClick={() => setAccent(color)} aria-label={color}/>)}</div></div><div className="preference-group custom-color-group"><span>{language === "en" ? "Custom color" : "เลือกสีเอง"}</span><label><input type="color" value={customColor} onChange={(event) => { setCustomColor(event.target.value); setAccent("custom"); }}/><i style={{ background: customColor }}/><strong>{customColor.toUpperCase()}</strong></label></div><div className="preference-group"><span>{copy.language}</span><div className="theme-options"><button type="button" className={language === "th" ? "selected" : ""} onClick={() => setLanguage("th")}>ไทย</button><button type="button" className={language === "en" ? "selected" : ""} onClick={() => setLanguage("en")}>English</button></div></div></section>}
@@ -393,6 +444,8 @@ export default function Home() {
       </div>
       <nav className="mobile-nav">{navItems.slice(0, 2).map((item) => <button key={item.id} className={tab === item.id ? "selected" : ""} onClick={() => setTab(item.id)}><Icon name={item.icon === "ticket" ? "spark" : item.icon} size={21}/><span>{item.label === "หน้าหลัก" ? "หน้าแรก" : item.label}</span></button>)}<button className="mobile-add" onClick={() => openModal("item")} aria-label={copy.add}><span>＋</span><b>{language === "en" ? "Add" : "เพิ่ม"}</b></button>{navItems.slice(2).map((item) => <button key={item.id} className={tab === item.id ? "selected" : ""} onClick={() => setTab(item.id)}><Icon name={item.icon === "ticket" ? "spark" : item.icon} size={21}/><span>{item.label === "สิทธิ์บริการ" ? "บริการ" : item.label}</span></button>)}</nav>
     </section>
+
+    {cloudEnabled && showHouseholds && <HouseholdPanel houses={households} activeId={householdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} onClose={() => { setShowHouseholds(false); setHouseholdError(""); }} onSwitch={(id) => void switchHousehold(id)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => { setShowHouseholds(false); if (cloud) void cloud.auth.signOut(); }}/>}
 
     {modal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { setModal(null); setEditingEntry(null); } }}>
       <form className="entry-modal" onSubmit={saveEntry}>
