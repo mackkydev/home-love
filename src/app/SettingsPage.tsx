@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { cloud, hasDevicePin, replaceProfilePhoto, setDevicePin, verifyDevicePin, type Household } from "@/lib/cloud";
+import UsagePage from "./UsagePage";
 
-type Section = "menu" | "account" | "home" | "pin" | "display";
+type Section = "menu" | "account" | "home" | "pin" | "display" | "usage";
 
 async function prepareProfilePhoto(file: File): Promise<Blob> {
   if (!file.type.startsWith("image/")) throw new Error("Please choose a photo");
@@ -160,7 +161,7 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
     finally { setCurrentPin(""); setPinBusy(false); }
   };
 
-  const title = section === "account" ? (en ? "Account" : "บัญชีของฉัน") : section === "home" ? (en ? "Family home" : "บ้านและครอบครัว") : section === "pin" ? (en ? "App PIN" : "PIN เข้าแอป") : section === "display" ? (en ? "Display" : "การแสดงผล") : (en ? "Settings" : "ตั้งค่า");
+  const title = section === "account" ? (en ? "Account" : "บัญชีของฉัน") : section === "home" ? (en ? "Family home" : "บ้านและครอบครัว") : section === "pin" ? (en ? "App PIN" : "PIN เข้าแอป") : section === "display" ? (en ? "Display" : "การแสดงผล") : section === "usage" ? (en ? "System usage" : "การใช้งานระบบ") : (en ? "Settings" : "ตั้งค่า");
 
   return <div className="settings-page">
     <header className="settings-page-head">{section !== "menu" && <button type="button" className="settings-back" onClick={() => setSection("menu")} aria-label={en ? "Back" : "ย้อนกลับ"}>‹</button>}<div><span>{en ? "Our Home" : "บ้านของเรา"}</span><h1>{title}</h1></div></header>
@@ -171,6 +172,7 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
       <button type="button" onClick={() => setSection("display")}><span className="settings-menu-icon">◐</span><span><strong>{en ? "Display" : "การแสดงผล"}</strong><small>{en ? "Theme, colors, backup" : "ธีม สี และสำรองข้อมูล"}</small></span><b>›</b></button>
       <button type="button" onClick={onOpenHistory}><span className="settings-menu-icon">◷</span><span><strong>{en ? "History" : "ประวัติ"}</strong><small>{en ? "Browse all records" : "ดูรายการย้อนหลังทั้งหมด"}</small></span><b>›</b></button>
       {isAdmin && <button type="button" onClick={onOpenAdmin}><span className="settings-menu-icon">⚙</span><span><strong>{en ? "App administration" : "จัดการระบบ"}</strong><small>{en ? "Registration settings" : "ตั้งค่าการสมัครสมาชิก"}</small></span><b>›</b></button>}
+      {isAdmin && <button type="button" onClick={() => setSection("usage")}><span className="settings-menu-icon">▤</span><span><strong>{en ? "System usage" : "การใช้งานระบบ"}</strong><small>{en ? "Supabase and Vercel" : "Supabase และ Vercel"}</small></span><b>›</b></button>}
       {userId && <button type="button" className="settings-signout" onClick={onSignOut}><span className="settings-menu-icon">↪</span><span><strong>{en ? "Sign out" : "ออกจากระบบ"}</strong></span><b>›</b></button>}
     </div>}
     {section === "account" && <div className="settings-sections">
@@ -198,5 +200,6 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
     </div>}
     {section === "pin" && <div className="settings-sections"><section className="settings-card"><h2>{en ? "Ask for PIN when opening the app" : "ถาม PIN เมื่อเปิดแอป"}</h2><p>{en ? "This applies to this signed-in device. Email sign-in remains available." : "ใช้กับเครื่องนี้ที่เข้าสู่ระบบแล้ว ยังเข้าใช้ด้วยอีเมลได้ตามปกติ"}</p><div className="settings-toggle-row"><span>{pinEnabled ? (en ? "On" : "เปิดอยู่") : (en ? "Off" : "ปิดอยู่")}</span><button type="button" className={`settings-switch ${pinEnabled ? "on" : ""}`} role="switch" aria-checked={pinEnabled} aria-label={en ? "Ask for PIN when opening the app" : "ถาม PIN เมื่อเปิดแอป"} disabled={pinBusy || pinExists === null} onClick={() => void togglePin()}><i/></button></div>{pinExists && !pinEnabled && <input className="settings-pin-input" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="off" placeholder={en ? "Current PIN to turn on" : "PIN เดิมเพื่อเปิดใช้งาน"} value={currentPin} onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/>}</section><section className="settings-card"><h2>{pinExists ? (en ? "Change six-digit PIN" : "เปลี่ยน PIN 6 หลัก") : (en ? "Set six-digit PIN" : "ตั้ง PIN 6 หลัก")}</h2><p>{en ? "Choose a code that has not been used by another account." : "เลือกรหัสที่ไม่ซ้ำกับบัญชีอื่น"}</p>{pinExists === null ? <p>{en ? "Loading..." : "กำลังโหลด..."}</p> : <form className="household-password-form" onSubmit={(event) => void savePin(event)}>{!pinExists && <input type="password" minLength={8} required autoComplete="current-password" placeholder={en ? "Account password" : "รหัสผ่านบัญชี"} value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)}/>} {pinExists && <input type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "Current PIN" : "PIN เดิม"} value={currentPin} onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/>}<input type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "New six-digit PIN" : "PIN ใหม่ 6 หลัก"} value={newPin} onChange={(event) => setNewPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/><input type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "Confirm new PIN" : "ยืนยัน PIN ใหม่"} value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/><button type="submit" className="primary-button" disabled={pinBusy}>{pinExists ? (en ? "Change PIN" : "เปลี่ยน PIN") : (en ? "Set PIN" : "ตั้ง PIN")}</button></form>}{pinMessage && <p role="status">{pinMessage}</p>}</section></div>}
     {section === "display" && <div className="settings-sections"><section className="settings-card">{displaySettings}</section></div>}
+    {section === "usage" && isAdmin && <UsagePage language={language}/>}
   </div>;
 }

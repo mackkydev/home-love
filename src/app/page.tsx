@@ -6,7 +6,7 @@ import CloudAuth from "./CloudAuth";
 import SettingsPage from "./SettingsPage";
 import AdminPanel from "./AdminPanel";
 import PinLock from "./PinLock";
-import { calendarOccursOn, calendarWeekday, calendarDateAtOrBefore, calendarHasPastOccurrence, calendarSeriesFinished, type CalendarRecurrence } from "@/lib/calendar-recurrence";
+import { calendarOccursOn, calendarOccurrenceDates, calendarWeekday, calendarDateAtOrBefore, calendarHasPastOccurrence, calendarSeriesFinished, type CalendarRecurrence } from "@/lib/calendar-recurrence";
 
 type Tab = "home" | "items" | "services" | "calendar" | "history" | "settings";
 type AppTheme = "light" | "dark" | "system";
@@ -18,6 +18,7 @@ type ServiceAutoUse = { amount: number; everyDays: number; anchorDate: string; b
 type Attachment = { name: string; data: string; type: string };
 type Purchase = { id: string; date: string; store: string; price: number; quantity: number };
 type CalendarInfo = { type: "appointment" | "contract"; start: string; end?: string; time: string; remindMinutes: number; message: string; linkedEntryId?: string; locationUrl?: string; recurrence?: CalendarRecurrence };
+type InAppAlert = { key: string; entryId: string; occurrenceDate?: string; kind: "stock" | "medicine" | "appointment" | "contract"; title: string; body: string; occurredAt: number };
 type Entry = {
   id: string;
   name: string;
@@ -82,6 +83,35 @@ function safeLocationUrl(value?: string): string | null {
   if (!value) return null;
   try { const url = new URL(value.trim()); return url.protocol === "https:" || url.protocol === "http:" ? url.href : null; }
   catch { return null; }
+}
+
+function scheduledAlerts(entries: Entry[], nowMs: number, language: Language): InAppAlert[] {
+  if (!nowMs) return [];
+  const now = new Date(nowMs);
+  const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  const dateAt = (offsetDays: number) => localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays));
+  const oldest = nowMs - 14 * 86_400_000;
+  const result: InAppAlert[] = [];
+  for (const entry of entries) {
+    for (const reminder of entry.medicine?.reminders ?? []) {
+      if (!/^\d{2}:\d{2}$/.test(reminder.time)) continue;
+      for (let offset = -14; offset <= 0; offset += 1) {
+        const date = dateAt(offset);
+        const occurredAt = new Date(`${date}T${reminder.time}:00`).getTime();
+        if (occurredAt < oldest || occurredAt > nowMs) continue;
+        result.push({ key: `${entry.id}:medicine:${reminder.meal}:${date}`, entryId: entry.id, kind: "medicine", title: language === "en" ? `Medicine: ${entry.name}` : `ถึงเวลากิน: ${entry.name}`, body: reminder.message || (language === "en" ? `${reminder.meal} reminder` : `เวลากินยา ${reminder.meal}`), occurredAt });
+      }
+    }
+    if (entry.kind !== "calendar" || !entry.calendar) continue;
+    const event = entry.calendar;
+    const dates = event.type === "contract" ? [event.end || event.start] : calendarOccurrenceDates(event, dateAt(-14), dateAt(7));
+    for (const date of dates) {
+      const occurredAt = new Date(`${date}T${event.time || "09:00"}:00`).getTime() - Math.max(0, event.remindMinutes || 0) * 60_000;
+      if (!Number.isFinite(occurredAt) || occurredAt < oldest || occurredAt > nowMs) continue;
+      result.push({ key: `${entry.id}:calendar:${date}:${event.time}`, entryId: entry.id, occurrenceDate: date, kind: event.type, title: entry.name, body: event.message || (event.type === "contract" ? language === "en" ? "Contract ending" : "สัญญากำลังสิ้นสุด" : language === "en" ? "Appointment reminder" : "แจ้งเตือนนัดหมาย"), occurredAt });
+    }
+  }
+  return result;
 }
 
 const initialEntries: Entry[] = [
@@ -221,6 +251,8 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [form, setForm] = useState({ name: "", category: "ของใช้ในบ้าน", transaction: "expense" as "income" | "expense", price: "", purchaseQuantity: "1", total: "", unit: "ครั้ง", note: "", store: "", forPerson: "", paidDate: "", startDate: "", medMeals: [] as string[], medFoodTiming: "", medFrequencyHours: "", medDose: "", medDoseUnit: "เม็ด", medDetails: "", medReminders: [] as NonNullable<MedicineInstructions["reminders"]>, useReminders: false, photos: [] as string[], attachments: [] as Attachment[], trackStock: false, stockQuantity: "", stockDailyUse: "", stockUnit: "เม็ด", stockAutoDeduct: false, alertDays: "3", serviceAutoDeduct: false, serviceAutoAmount: "1", serviceAutoEveryDays: "1" });
   const [showAlerts, setShowAlerts] = useState(false);
+  const [notificationNow, setNotificationNow] = useState(0);
+  const [readAlertKeys, setReadAlertKeys] = useState<Set<string>>(() => new Set());
 
   const [theme, setTheme] = useState<AppTheme>("light");
   const [systemDark, setSystemDark] = useState(false);
@@ -353,6 +385,25 @@ export default function Home() {
     void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
   }, []);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(""), 2600); return () => clearTimeout(timer); }, [notice]);
+  useEffect(() => { setNotificationNow(Date.now()); const timer = setInterval(() => setNotificationNow(Date.now()), 60_000); return () => clearInterval(timer); }, []);
+  useEffect(() => {
+    let active = true;
+    setReadAlertKeys(new Set());
+    if (!householdId || !ready) return () => { active = false; };
+    const load = async () => {
+      if (cloud && loadedUser.current) {
+        const { data, error } = await cloud.from("notification_reads").select("occurrence_key").eq("household_id", householdId).eq("user_id", loadedUser.current).order("read_at", { ascending: false }).limit(1000);
+        if (!error && active) setReadAlertKeys(new Set((data ?? []).map((row) => row.occurrence_key as string)));
+      } else if (active) {
+        try { setReadAlertKeys(new Set(JSON.parse(localStorage.getItem(`home-love-alert-reads-${householdId}`) || "[]") as string[])); } catch { setReadAlertKeys(new Set()); }
+      }
+    };
+    void load();
+    const timer = setInterval(() => { if (document.visibilityState === "visible") void load(); }, 60_000);
+    const onVisible = () => { if (document.visibilityState === "visible") void load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { active = false; clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
+  }, [householdId, ready, cloudReady]);
   useEffect(() => {
     const syncDetail = () => { const params = new URL(window.location.href).searchParams; setSelectedEntryId(params.get("item")); setSelectedOccurrenceDate(params.get("occurrence")); };
     syncDetail();
@@ -370,6 +421,16 @@ export default function Home() {
   const formStockDays = form.stockQuantity !== "" && Number(form.stockDailyUse) > 0 ? Math.ceil(Number(form.stockQuantity) / Number(form.stockDailyUse)) : null;
   const formStockDate = formStockDays !== null ? addCalendarDays(todayValue, formStockDays) : null;
   const stockAlerts = useMemo(() => entries.flatMap((entry) => { const days = stockDaysLeft(entry.stock); return entry.stock && days !== null && days <= entry.stock.alertDays ? [{ entry, days, quantity: stockRemaining(entry.stock) }] : []; }).sort((a, b) => a.days - b.days), [entries, todayValue]);
+  const inAppAlerts = useMemo(() => {
+    if (!notificationNow) return [];
+    const stock: InAppAlert[] = stockAlerts.map(({ entry, days, quantity }) => ({
+      key: `${entry.id}:stock:${stockRunoutDate(entry.stock) ?? "low"}`, entryId: entry.id, kind: "stock", title: language === "en" ? `Running low: ${entry.name}` : `ใกล้หมด: ${entry.name}`,
+      body: language === "en" ? `${currency(quantity)} ${entry.stock?.unit ?? ""} left · ${days} days remaining` : `เหลือประมาณ ${currency(quantity)} ${entry.stock?.unit ?? ""} · ${stockRunoutLabel(days, language, stockRunoutDate(entry.stock))}`,
+      occurredAt: notificationNow,
+    }));
+    return [...stock, ...scheduledAlerts(entries, notificationNow, language)].sort((a, b) => b.occurredAt - a.occurredAt).slice(0, 80);
+  }, [entries, stockAlerts, notificationNow, language]);
+  const unreadAlertCount = inAppAlerts.filter((alert) => !readAlertKeys.has(alert.key)).length;
   const enablePush = async () => {
     if (!("Notification" in window) || !("serviceWorker" in navigator) || !cloud) { setNotice(ui("อุปกรณ์นี้ยังไม่รองรับเว็บพุช", "Web Push is unavailable here")); return; }
     const permission = await Notification.requestPermission();
@@ -580,6 +641,16 @@ export default function Home() {
     finally { setBackupBusy(false); }
   };
   const openDetail = (id: string, occurrenceDate?: string) => { const url = new URL(window.location.href); url.searchParams.set("item", id); if (occurrenceDate) url.searchParams.set("occurrence", occurrenceDate); else url.searchParams.delete("occurrence"); window.history.pushState({ homeLoveDetail: true }, "", url); setSelectedEntryId(id); setSelectedOccurrenceDate(occurrenceDate ?? null); };
+  const markAlertsRead = async (keys: string[]) => {
+    if (!keys.length) return;
+    setReadAlertKeys((current) => new Set([...current, ...keys]));
+    if (cloud && loadedUser.current && householdId) {
+      const { error } = await cloud.from("notification_reads").upsert(keys.map((occurrence_key) => ({ occurrence_key, user_id: loadedUser.current, household_id: householdId })), { onConflict: "user_id,household_id,occurrence_key", ignoreDuplicates: true });
+      if (error) setNotice(ui("บันทึกสถานะการอ่านไม่สำเร็จ", "Could not sync read status"));
+    } else if (householdId) {
+      try { const previous = JSON.parse(localStorage.getItem(`home-love-alert-reads-${householdId}`) || "[]") as string[]; localStorage.setItem(`home-love-alert-reads-${householdId}`, JSON.stringify([...new Set([...previous, ...keys])].slice(-1000))); } catch { /* Keep this session's read state. */ }
+    }
+  };
   const closeDetail = () => { if (window.history.state?.homeLoveDetail) window.history.back(); else { const url = new URL(window.location.href); url.searchParams.delete("item"); url.searchParams.delete("occurrence"); window.history.replaceState(null, "", url); setSelectedEntryId(null); setSelectedOccurrenceDate(null); } };
 
   const flushCurrentHousehold = async () => {
@@ -682,10 +753,10 @@ export default function Home() {
     </aside>
 
     <section className="main-column" id="home">
-      <header className="topbar"><div className="breadcrumb"><button type="button" className="breadcrumb-house" onClick={() => cloudEnabled && setTab("settings")}>{households.find((house) => house.id === householdId)?.name ?? ui("บ้านของเรา", "Our home")}</button><Icon name="chevron" size={15}/><strong>{(navItems.find((item) => item.id === tab)?.label ?? (tab === "calendar" ? ui("บันทึกแจ้งเตือน", "Calendar") : copy.history))}</strong></div><div className="top-actions"><span className={`sync-status ${cloudError ? "sync-error" : cloudSaving ? "sync-saving" : ""}`} role="status" title={cloudEnabled ? cloudError ? ui("ซิงก์มีปัญหา", "Sync issue") : cloudSaving ? ui("กำลังบันทึก", "Saving") : ui("บันทึกแล้ว", "Saved") : copy.synced} aria-label={cloudEnabled ? cloudError ? ui("ซิงก์มีปัญหา", "Sync issue") : cloudSaving ? ui("กำลังบันทึก", "Saving") : ui("บันทึกแล้ว", "Saved") : copy.synced}><i/></span><button type="button" className="language-toggle" onClick={() => setLanguage((current) => current === "th" ? "en" : "th")} aria-label={language === "th" ? "เปลี่ยนภาษาเป็นอังกฤษ" : "Switch language to Thai"} title={language === "th" ? "English" : "ไทย"}>{language.toUpperCase()}</button><button className="icon-button notification-button" aria-label={ui(`การแจ้งเตือน ${stockAlerts.length} รายการใกล้หมด`, `${stockAlerts.length} low-stock alerts`)} aria-expanded={showAlerts} onClick={() => setShowAlerts((value) => !value)}><Icon name="bell"/>{stockAlerts.length > 0 && <span className="notification-count">{stockAlerts.length}</span>}</button><button className="avatar top-avatar" aria-label={ui("จัดการบัญชีและบ้าน", "Account and household")} onClick={() => setTab("settings")}>{profilePhotoUrl ? <img src={profilePhotoUrl} alt=""/> : "ค"}</button></div></header>
+      <header className="topbar"><div className="breadcrumb"><button type="button" className="breadcrumb-house" onClick={() => cloudEnabled && setTab("settings")}>{households.find((house) => house.id === householdId)?.name ?? ui("บ้านของเรา", "Our home")}</button><Icon name="chevron" size={15}/><strong>{(navItems.find((item) => item.id === tab)?.label ?? (tab === "calendar" ? ui("บันทึกแจ้งเตือน", "Calendar") : copy.history))}</strong></div><div className="top-actions"><span className={`sync-status ${cloudError ? "sync-error" : cloudSaving ? "sync-saving" : ""}`} role="status" title={cloudEnabled ? cloudError ? ui("ซิงก์มีปัญหา", "Sync issue") : cloudSaving ? ui("กำลังบันทึก", "Saving") : ui("บันทึกแล้ว", "Saved") : copy.synced} aria-label={cloudEnabled ? cloudError ? ui("ซิงก์มีปัญหา", "Sync issue") : cloudSaving ? ui("กำลังบันทึก", "Saving") : ui("บันทึกแล้ว", "Saved") : copy.synced}><i/></span><button type="button" className="language-toggle" onClick={() => setLanguage((current) => current === "th" ? "en" : "th")} aria-label={language === "th" ? "เปลี่ยนภาษาเป็นอังกฤษ" : "Switch language to Thai"} title={language === "th" ? "English" : "ไทย"}>{language.toUpperCase()}</button><button className="icon-button notification-button" aria-label={ui(`การแจ้งเตือนที่ยังไม่อ่าน ${unreadAlertCount} รายการ`, `${unreadAlertCount} unread notifications`)} aria-expanded={showAlerts} onClick={() => setShowAlerts((value) => !value)}><Icon name="bell"/>{unreadAlertCount > 0 && <span className="notification-count">{unreadAlertCount > 99 ? "99+" : unreadAlertCount}</span>}</button><button className="avatar top-avatar" aria-label={ui("จัดการบัญชีและบ้าน", "Account and household")} onClick={() => setTab("settings")}>{profilePhotoUrl ? <img src={profilePhotoUrl} alt=""/> : "ค"}</button></div></header>
       {cloudError && <div className="cloud-sync-error" role="alert">{ui("บันทึกออนไลน์ไม่สำเร็จ", "Online save failed")}: {cloudError} <button type="button" onClick={() => setSyncRevision((value) => value + 1)}>{ui("ลองอีกครั้ง", "Retry")}</button></div>}
       {pendingLocalImport && <div className="cloud-import-banner"><span>{ui(`พบบันทึกเดิม ${pendingLocalImport.entries.length} รายการในเครื่องนี้`, `Found ${pendingLocalImport.entries.length} local records on this device`)}</span><button type="button" onClick={() => { setEntries(pendingLocalImport.entries); setExtraCategories(pendingLocalImport.categories); setPendingLocalImport(null); setNotice(ui("กำลังนำข้อมูลเดิมเข้าบัญชี", "Importing local records")); }}>{ui("นำเข้าบัญชี", "Import")}</button><button type="button" onClick={() => setPendingLocalImport(null)}>{ui("ภายหลัง", "Later")}</button></div>}
-      {showAlerts && <section className="alerts-popover" aria-label="รายการแจ้งเตือน"><div className="alerts-heading"><div><strong>รายการใกล้หมด</strong><small>ตามจำนวนที่ใช้ต่อวันและวันที่ตั้งเตือน</small></div><button type="button" aria-label="ปิดการแจ้งเตือน" onClick={() => setShowAlerts(false)}><Icon name="close" size={16}/></button></div>{stockAlerts.length ? <ul>{stockAlerts.map(({ entry, days, quantity }) => <li key={entry.id}><span className="alert-dot"/><div><strong>{entry.name}</strong><small>เหลือประมาณ {currency(quantity)} {entry.stock?.unit} · {stockRunoutLabel(days, language, stockRunoutDate(entry.stock))}</small></div><button type="button" onClick={() => { setTab("items"); setCategory(entry.category); setEndingSoon(true); setShowAlerts(false); }}>ดู</button></li>)}</ul> : <p className="alerts-empty">ยังไม่มีรายการที่ใกล้หมด</p>}{notificationPermission !== "denied" && !pushReady && <button className="enable-notifications" type="button" onClick={() => void enablePush()}>{ui("เปิดแจ้งเตือนบนโทรศัพท์", "Enable phone notifications")}</button>}{pushReady && <p className="notification-help">{ui("เปิดเว็บพุชแล้ว", "Web Push enabled")}</p>}{notificationPermission === "denied" && <p className="notification-help">การแจ้งเตือนถูกปิดไว้ เปิดสิทธิ์ได้ในการตั้งค่าเว็บไซต์</p>}{notificationPermission === "unsupported" && <p className="notification-help">เบราว์เซอร์นี้ไม่รองรับการแจ้งเตือน</p>}</section>}
+      {showAlerts && <section className="alerts-popover" aria-label={ui("รายการแจ้งเตือน", "Notifications")}><div className="alerts-heading"><div><strong>{ui("การแจ้งเตือน", "Notifications")}</strong><small>{ui(`${unreadAlertCount} รายการที่ยังไม่อ่าน`, `${unreadAlertCount} unread`)}</small></div><button type="button" aria-label={ui("ปิดการแจ้งเตือน", "Close notifications")} onClick={() => setShowAlerts(false)}><Icon name="close" size={16}/></button></div>{inAppAlerts.length ? <><ul>{inAppAlerts.map((alert) => <li key={alert.key} className={readAlertKeys.has(alert.key) ? "is-read" : "is-unread"}><span className="alert-dot"/><div><strong>{alert.title}</strong><small>{alert.body}</small><small>{new Date(alert.occurredAt).toLocaleString(language === "en" ? "en-GB" : "th-TH", { dateStyle: "medium", timeStyle: "short" })}</small></div><button type="button" onClick={() => { void markAlertsRead([alert.key]); setShowAlerts(false); openDetail(alert.entryId, alert.occurrenceDate); }}>{ui("ดู", "View")}</button></li>)}</ul>{unreadAlertCount > 0 && <button className="alerts-mark-all" type="button" onClick={() => void markAlertsRead(inAppAlerts.map((alert) => alert.key))}>{ui("ทำเครื่องหมายว่าอ่านทั้งหมด", "Mark all as read")}</button>}</> : <p className="alerts-empty">{ui("ยังไม่มีการแจ้งเตือน", "No notifications yet")}</p>}{notificationPermission !== "denied" && !pushReady && <button className="enable-notifications" type="button" onClick={() => void enablePush()}>{ui("เปิดแจ้งเตือนบนโทรศัพท์", "Enable phone notifications")}</button>}{pushReady && <p className="notification-help">{ui("เปิดเว็บพุชแล้ว", "Web Push enabled")}</p>}{notificationPermission === "denied" && <p className="notification-help">{ui("การแจ้งเตือนถูกปิดไว้ เปิดสิทธิ์ได้ในการตั้งค่าเว็บไซต์", "Notifications are blocked in site settings")}</p>}{notificationPermission === "unsupported" && <p className="notification-help">{ui("เบราว์เซอร์นี้ไม่รองรับการแจ้งเตือน", "This browser does not support notifications")}</p>}</section>}
 
       <div className="content-area">
         {tab === "settings" ? <SettingsPage houses={households} activeId={householdId} defaultHouseholdId={defaultHouseholdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} displaySettings={displaySettings} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onMakeDefault={(id) => void makeDefaultHousehold(id)} onRename={(id, name) => renameCurrentHousehold(id, name)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => void signOut()}/> : <>
