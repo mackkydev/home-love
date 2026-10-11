@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+.portrait-only-overlay{display:none}
+.portrait-only-message.en{display:none}
+html[lang="en"] .portrait-only-message.th{display:none}
+html[lang="en"] .portrait-only-message.en{display:block}
+@media (orientation:landscape) and (min-aspect-ratio:4/3) and (max-height:600px) and (pointer:coarse){
+  .portrait-only-overlay{position:fixed;z-index:10000;inset:0;display:grid;place-items:center;padding:24px;background:var(--canvas);color:var(--ink)}
+  .portrait-only-card{width:min(100%,340px);padding:24px;border:1px solid var(--line);border-radius:22px;background:var(--surface);box-shadow:0 14px 45px #10234a26;text-align:center}
+  .portrait-only-icon{display:grid;place-items:center;width:58px;height:58px;margin:0 auto 14px;border-radius:18px;background:var(--blue);color:#fff;font-size:42px;line-height:1}
+  .portrait-only-card strong{font-size:18px;line-height:1.4}
+  .portrait-only-card p{margin:8px 0 0;color:var(--muted);font-size:14px;line-height:1.5}
+}
+
 :root{--ink:#20253b;--muted:#9298aa;--line:#eceef4;--blue:#3565f6;--blue-dark:#244fe0;--surface:#fff;--canvas:#f6f7fb;--font:var(--font-noto-thai),Arial,Tahoma,sans-serif}
 [data-accent="violet"]{--blue:#7957df;--blue-dark:#6541c7}[data-accent="green"]{--blue:#259b72;--blue-dark:#17815b}[data-accent="rose"]{--blue:#df5f78;--blue-dark:#c34c66}[data-accent="pink"]{--blue:#e64794;--blue-dark:#c92f78}[data-accent="gray"]{--blue:#697586;--blue-dark:#4e5969}[data-accent="gold"]{--blue:#cf9223;--blue-dark:#ae7311}
 [data-palette="pastel"][data-accent="blue"]{--blue:#7394ed;--blue-dark:#5c78c9}[data-palette="pastel"][data-accent="violet"]{--blue:#9a82df;--blue-dark:#7d65c5}[data-palette="pastel"][data-accent="green"]{--blue:#64ad91;--blue-dark:#4a8f75}[data-palette="pastel"][data-accent="rose"]{--blue:#df8798;--blue-dark:#bd6879}[data-palette="pastel"][data-accent="pink"]{--blue:#e98aba;--blue-dark:#c96899}[data-palette="pastel"][data-accent="gray"]{--blue:#909aa8;--blue-dark:#717b89}[data-palette="pastel"][data-accent="gold"]{--blue:#d7ae62;--blue-dark:#b9893c}

@@ -33,7 +33,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         const custom = localStorage.getItem('baanjai-custom-color');
         if (accent === 'custom' && /^#[0-9a-f]{6}$/i.test(custom || '')) root.style.setProperty('--blue', custom);
       } catch (_) {}` }} /></head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <div className="portrait-only-overlay" role="status" aria-live="polite">
+          <div className="portrait-only-card">
+            <span className="portrait-only-icon" aria-hidden="true">↻</span>
+            <strong className="portrait-only-message th">กรุณาหมุนโทรศัพท์เป็นแนวตั้ง</strong>
+            <strong className="portrait-only-message en">Please turn your phone upright</strong>
+            <p className="portrait-only-message th">บ้านของเราใช้งานบนมือถือในแนวตั้ง</p>
+            <p className="portrait-only-message en">Our Home works in portrait mode on phones.</p>
+          </div>
+        </div>
+      </body>
     </html>
   );
 }
