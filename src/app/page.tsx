@@ -16,7 +16,7 @@ type Payment = { paidAt: string; startAt: string; amount: number; quantity: numb
 type ServiceAutoUse = { amount: number; everyDays: number; anchorDate: string; baseRemaining: number };
 type Attachment = { name: string; data: string; type: string };
 type Purchase = { id: string; date: string; store: string; price: number; quantity: number };
-type CalendarInfo = { type: "appointment" | "contract"; start: string; end?: string; time: string; remindMinutes: number; message: string; linkedEntryId?: string };
+type CalendarInfo = { type: "appointment" | "contract"; start: string; end?: string; time: string; remindMinutes: number; message: string; linkedEntryId?: string; locationUrl?: string };
 type Entry = {
   id: string;
   name: string;
@@ -48,6 +48,18 @@ type Entry = {
 };
 type MedicineInstructions = { meals: string[]; foodTiming: string; frequencyHours: string; dose: string; doseUnit: string; details: string; reminders?: { meal: string; time: string; message: string }[] };
 type StockInfo = { quantity: number; dailyUse: number; unit: string; alertDays: number; autoDeduct?: boolean; updatedAt?: string; events?: { at: string; amount: number; actor: string }[] };
+
+function isPastAppointment(entry: Entry): boolean {
+  if (entry.kind !== "calendar" || entry.calendar?.type !== "appointment" || !entry.calendar.start) return false;
+  const scheduled = new Date(`${entry.calendar.start}T${entry.calendar.time || "23:59"}:00`);
+  return !Number.isNaN(scheduled.getTime()) && scheduled.getTime() < Date.now();
+}
+
+function safeLocationUrl(value?: string): string | null {
+  if (!value) return null;
+  try { const url = new URL(value.trim()); return url.protocol === "https:" || url.protocol === "http:" ? url.href : null; }
+  catch { return null; }
+}
 
 const initialEntries: Entry[] = [
   { id: "a1", name: "วิตามินซี 1000 มก.", category: "ยาและสุขภาพ", kind: "item", price: 289, date: "2026-10-08", actor: "แม่", forPerson: "แม่", store: "ร้านขายยาใกล้บ้าน" },
@@ -171,6 +183,8 @@ export default function Home() {
   const [modal, setModal] = useState<"item" | "service" | "note" | "category" | "edit" | "renew" | "purchase" | null>(null);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Entry | null>(null);
+  const [deletePastAppointmentsOpen, setDeletePastAppointmentsOpen] = useState(false);
+  const [calendarEditId, setCalendarEditId] = useState<string | null>(null);
   const [photoDeleteTarget, setPhotoDeleteTarget] = useState<{ kind: "form"; index: number } | { kind: "attachment"; index: number } | { kind: "entry"; entryId: string; index: number } | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [backupBusy, setBackupBusy] = useState(false);
@@ -471,6 +485,18 @@ export default function Home() {
     setNotice("ลบรายการแล้ว");
     setDeleteTarget(null);
   };
+  const confirmRemovePastAppointments = () => {
+    const pastIds = new Set(entries.filter(isPastAppointment).map((entry) => entry.id));
+    if (pastIds.size) setEntries((current) => current.filter((entry) => !pastIds.has(entry.id)));
+    if (selectedEntryId && pastIds.has(selectedEntryId)) {
+      setSelectedEntryId(null);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("item");
+      window.history.replaceState(null, "", url);
+    }
+    setDeletePastAppointmentsOpen(false);
+    setNotice(language === "en" ? `Deleted ${pastIds.size} past appointments` : `ลบนัดหมายที่ผ่านไปแล้ว ${pastIds.size} รายการ`);
+  };
   const confirmPhotoRemove = () => {
     if (!photoDeleteTarget) return;
     const index = photoDeleteTarget.index;
@@ -598,6 +624,8 @@ export default function Home() {
   if (cloudEnabled && deviceLocked) return <PinLock language={language} onUnlock={() => setDeviceLocked(false)}/>;
 
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId);
+  const calendarEditTarget = entries.find((entry) => entry.id === calendarEditId);
+  const pastAppointmentCount = entries.filter(isPastAppointment).length;
   return <main className={`app-shell ${tab !== "home" && tab !== "settings" ? "is-list-view" : ""} ${tab === "calendar" ? "is-calendar-view" : ""}`}>
     <aside className="sidebar">
       <a className="brand" href="#home" onClick={() => setTab("home")}><span className="brand-mark"><Icon name="home" size={21}/></span><span><strong>บ้านของเรา</strong><small>HOME ORGANIZER</small></span></a>
@@ -620,7 +648,7 @@ export default function Home() {
         {tab === "settings" ? <SettingsPage houses={households} activeId={householdId} defaultHouseholdId={defaultHouseholdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} displaySettings={displaySettings} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onMakeDefault={(id) => void makeDefaultHousehold(id)} onRename={(id, name) => renameCurrentHousehold(id, name)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => void signOut()}/> : <>
         <section className="welcome-row"><div><div className="eyebrow"><span className="eyebrow-dot"/> {headerDate}</div><h1>{tab === "home" ? <>{copy.hello} <span>✳</span></> : (navItems.find((item) => item.id === tab)?.label ?? (tab === "calendar" ? ui("บันทึกแจ้งเตือน", "Calendar") : copy.history))}</h1><p>{tab === "home" ? copy.intro : language === "en" ? "Manage and search home information in one place." : "จัดการและค้นหาข้อมูลของบ้านได้ในที่เดียว"}</p></div><button className="primary-button desktop-add" onClick={() => openModal(tab === "services" ? "service" : tab === "items" && category === "เอกสาร" ? "note" : "item")}><span>＋</span> {copy.add}</button></section>
 
-        {tab === "calendar" ? <CalendarPage entries={entries} language={language} onSave={(entry) => setEntries((previous) => [entry, ...previous])} onDelete={(entry) => removeEntry(entry)} onOpenEntry={(id) => openDetail(id)}/> : tab === "home" ? <>
+        {tab === "calendar" ? <CalendarPage entries={entries} language={language} editTarget={calendarEditTarget} onEditDone={() => setCalendarEditId(null)} onSave={(entry) => setEntries((previous) => [entry, ...previous])} onUpdate={(updated) => setEntries((previous) => previous.map((entry) => entry.id === updated.id ? updated : entry))} onDelete={(entry) => removeEntry(entry)} onDeletePast={() => setDeletePastAppointmentsOpen(true)} onOpenEntry={(id) => openDetail(id)}/> : tab === "home" ? <>
           <section className="summary-grid">
             <article className="summary-card blue-summary"><div className="summary-top"><span>{ui("ค่าใช้จ่ายเดือนนี้", "This month's expenses")}</span><span className="summary-icon"><Icon name="wallet" size={19}/></span></div><strong className="summary-number">฿{currency(spent)}</strong><div className="summary-foot"><span className="summary-trend">↗</span> {ui("รวมรายการซื้อในเดือนนี้", "All purchases this month")}</div><div className="summary-decoration"/></article>
             <article className="summary-card income-summary"><div className="summary-top"><span>{ui("รายรับเดือนนี้", "This month's income")}</span><span className="summary-icon income-icon"><Icon name="wallet" size={19}/></span></div><strong className="summary-number">฿{currency(income)}</strong><div className="summary-foot">{ui("รวมเงินเข้าของครัวเรือน", "All household income")}</div><div className="mini-bars"><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/></div></article>
@@ -643,7 +671,7 @@ export default function Home() {
 
     {selectedEntryId && <section className="detail-page" aria-label={ui("รายละเอียดรายการ", "Record details")}>
       <header className="detail-page-header"><button type="button" className="detail-back-button" onClick={closeDetail} aria-label={ui("กลับ", "Back")}><Icon name="chevron" size={20}/></button><div><small>{ui("รายละเอียดรายการ", "Record details")}</small><strong>{selectedEntry?.name ?? ui("ไม่พบรายการ", "Record not found")}</strong></div></header>
-      <div className="detail-page-body">{selectedEntry ? <>{selectedEntry.kind === "calendar" && selectedEntry.calendar ? <CalendarDetail entry={selectedEntry} entries={entries} language={language} onOpenEntry={openDetail} onDelete={() => removeEntry(selectedEntry)}/> : <EntryRow entry={selectedEntry} language={language} detailMode onDeletePhoto={(index) => setPhotoDeleteTarget({ kind: "entry", entryId: selectedEntry.id, index })} onConsume={() => consumed(selectedEntry)} onStockUse={() => recordStockUse(selectedEntry)} onEdit={() => editEntry(selectedEntry)} onRenew={() => renewService(selectedEntry)} onBuyAgain={() => buyAgain(selectedEntry)} onRemove={() => removeEntry(selectedEntry)} onProgressStyle={(style) => setEntries((prev) => prev.map((entry) => entry.id === selectedEntry.id ? { ...entry, progressStyle: style } : entry))}/>}{Boolean(selectedEntry.medicine?.reminders?.length) && <section className="purchase-history"><div className="section-heading"><h2>{ui("เวลาแจ้งเตือน", "Reminder times")}</h2></div>{selectedEntry.medicine?.reminders?.map((reminder) => <div className="purchase-history-row" key={reminder.meal}><span>{reminder.meal} · {reminder.message || `${ui("ถึงเวลากิน", "Time for")} ${selectedEntry.name}`}</span><strong>{reminder.time}</strong></div>)}</section>}{selectedEntry.kind === "item" && !isIncomeEntry(selectedEntry) && <section className="purchase-history"><div className="section-heading"><h2>{ui("ประวัติการซื้อ", "Purchase history")}</h2><button type="button" className="primary-button" onClick={() => buyAgain(selectedEntry)}>＋ {ui("ซื้ออีกครั้ง", "Buy again")}</button></div>{(selectedEntry.purchases ?? (selectedEntry.price != null ? [{ id: `original-${selectedEntry.id}`, date: selectedEntry.date, store: selectedEntry.store ?? "", price: selectedEntry.price, quantity: 1 }] : [])).slice().reverse().map((purchase) => <div className="purchase-history-row" key={purchase.id}><span>{dateLabel(purchase.date, language)} · {purchase.store || ui("ไม่ระบุร้าน", "No store")} · {purchase.quantity} {ui("ชิ้น", "items")}</span><strong>฿{currency(purchase.price)}</strong></div>)}</section>}</> : <div className="empty-state"><strong>{ui("ไม่พบรายการนี้", "Record not found")}</strong><button type="button" className="primary-button" onClick={closeDetail}>{ui("กลับ", "Back")}</button></div>}</div>
+      <div className="detail-page-body">{selectedEntry ? <>{selectedEntry.kind === "calendar" && selectedEntry.calendar ? <CalendarDetail entry={selectedEntry} entries={entries} language={language} onOpenEntry={openDetail} onEdit={() => { if (!isPastAppointment(selectedEntry)) { setCalendarEditId(selectedEntry.id); closeDetail(); } }} onDelete={() => removeEntry(selectedEntry)}/> : <EntryRow entry={selectedEntry} language={language} detailMode onDeletePhoto={(index) => setPhotoDeleteTarget({ kind: "entry", entryId: selectedEntry.id, index })} onConsume={() => consumed(selectedEntry)} onStockUse={() => recordStockUse(selectedEntry)} onEdit={() => editEntry(selectedEntry)} onRenew={() => renewService(selectedEntry)} onBuyAgain={() => buyAgain(selectedEntry)} onRemove={() => removeEntry(selectedEntry)} onProgressStyle={(style) => setEntries((prev) => prev.map((entry) => entry.id === selectedEntry.id ? { ...entry, progressStyle: style } : entry))}/>}{Boolean(selectedEntry.medicine?.reminders?.length) && <section className="purchase-history"><div className="section-heading"><h2>{ui("เวลาแจ้งเตือน", "Reminder times")}</h2></div>{selectedEntry.medicine?.reminders?.map((reminder) => <div className="purchase-history-row" key={reminder.meal}><span>{reminder.meal} · {reminder.message || `${ui("ถึงเวลากิน", "Time for")} ${selectedEntry.name}`}</span><strong>{reminder.time}</strong></div>)}</section>}{selectedEntry.kind === "item" && !isIncomeEntry(selectedEntry) && <section className="purchase-history"><div className="section-heading"><h2>{ui("ประวัติการซื้อ", "Purchase history")}</h2><button type="button" className="primary-button" onClick={() => buyAgain(selectedEntry)}>＋ {ui("ซื้ออีกครั้ง", "Buy again")}</button></div>{(selectedEntry.purchases ?? (selectedEntry.price != null ? [{ id: `original-${selectedEntry.id}`, date: selectedEntry.date, store: selectedEntry.store ?? "", price: selectedEntry.price, quantity: 1 }] : [])).slice().reverse().map((purchase) => <div className="purchase-history-row" key={purchase.id}><span>{dateLabel(purchase.date, language)} · {purchase.store || ui("ไม่ระบุร้าน", "No store")} · {purchase.quantity} {ui("ชิ้น", "items")}</span><strong>฿{currency(purchase.price)}</strong></div>)}</section>}</> : <div className="empty-state"><strong>{ui("ไม่พบรายการนี้", "Record not found")}</strong><button type="button" className="primary-button" onClick={closeDetail}>{ui("กลับ", "Back")}</button></div>}</div>
     </section>}
 
     {cloudEnabled && appAdmin && showAdmin && <AdminPanel language={language} onClose={() => setShowAdmin(false)}/>}
@@ -682,12 +710,17 @@ export default function Home() {
       </form>
     </div>}
     {deleteTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDeleteTarget(null); }}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-description"><span className="confirm-icon"><Icon name="trash" size={22}/></span><h2 id="delete-title">ลบรายการนี้?</h2><p id="delete-description">ต้องการลบ <strong>“{deleteTarget.name}”</strong> ใช่ไหม<br/>การลบนี้ไม่สามารถย้อนกลับได้</p><div className="confirm-actions"><button className="secondary-button" onClick={() => setDeleteTarget(null)}>ยกเลิก</button><button className="danger-button" onClick={confirmRemove}><Icon name="trash" size={16}/> ลบรายการ</button></div></section></div>}
+    {deletePastAppointmentsOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDeletePastAppointmentsOpen(false); }}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-past-title" aria-describedby="delete-past-description"><span className="confirm-icon"><Icon name="trash" size={22}/></span><h2 id="delete-past-title">{ui("ลบนัดหมายที่ผ่านไปแล้ว?", "Delete past appointments?")}</h2><p id="delete-past-description">{ui(`จะลบนัดหมายที่ผ่านไปแล้ว ${pastAppointmentCount} รายการ การลบนี้ไม่สามารถย้อนกลับได้`, `This will delete ${pastAppointmentCount} past appointments. This cannot be undone.`)}</p><div className="confirm-actions"><button type="button" className="secondary-button" onClick={() => setDeletePastAppointmentsOpen(false)}>{ui("ยกเลิก", "Cancel")}</button><button type="button" className="danger-button" disabled={pastAppointmentCount === 0} onClick={confirmRemovePastAppointments}><Icon name="trash" size={16}/>{ui("ลบทั้งหมด", "Delete all")}</button></div></section></div>}
     {photoDeleteTarget && <div className="modal-backdrop photo-confirm-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPhotoDeleteTarget(null); }}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="photo-delete-title" aria-describedby="photo-delete-description"><span className="confirm-icon"><Icon name="trash" size={22}/></span><h2 id="photo-delete-title">{photoDeleteTarget.kind === "attachment" ? ui("ลบไฟล์แนบนี้?", "Delete this attachment?") : ui("ลบรูปภาพนี้?", "Delete this photo?")}</h2><p id="photo-delete-description">{ui("ไฟล์ที่ลบจากรายการจะถูกลบจากที่เก็บออนไลน์หลังบันทึกข้อมูล", "The file will also be removed from online storage after the record is saved.")}</p><div className="confirm-actions"><button type="button" className="secondary-button" onClick={() => setPhotoDeleteTarget(null)}>{ui("ยกเลิก", "Cancel")}</button><button type="button" className="danger-button" onClick={confirmPhotoRemove}><Icon name="trash" size={16}/>{ui("ลบไฟล์", "Delete file")}</button></div></section></div>}
     {notice && <div className="toast"><span><Icon name="check" size={15}/></span>{notice}</div>}
   </main>;
 }
 
-function CalendarPage({ entries, language, onSave, onDelete, onOpenEntry }: { entries: Entry[]; language: Language; onSave: (entry: Entry) => void; onDelete: (entry: Entry) => void; onOpenEntry: (id: string) => void }) {
+function CalendarPage({ entries, language, editTarget, onEditDone, onSave, onUpdate, onDelete, onDeletePast, onOpenEntry }: {
+  entries: Entry[]; language: Language; editTarget?: Entry; onEditDone: () => void;
+  onSave: (entry: Entry) => void; onUpdate: (entry: Entry) => void;
+  onDelete: (entry: Entry) => void; onDeletePast: () => void; onOpenEntry: (id: string) => void;
+}) {
   const ui = (th: string, en: string) => language === "en" ? en : th;
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [selected, setSelected] = useState(today());
@@ -702,24 +735,121 @@ function CalendarPage({ entries, language, onSave, onDelete, onOpenEntry }: { en
   const [remindMinutes, setRemindMinutes] = useState("60");
   const [message, setMessage] = useState("");
   const [linkedEntryId, setLinkedEntryId] = useState("");
+  const [locationUrl, setLocationUrl] = useState("");
+  const [formError, setFormError] = useState("");
+
+  useEffect(() => {
+    if (!editTarget?.calendar) return;
+    const calendar = editTarget.calendar;
+    setName(editTarget.name);
+    setType(calendar.type);
+    setStart(calendar.start);
+    setEnd(calendar.end ?? "");
+    setTime(calendar.time || "09:00");
+    setRemindMinutes(String(calendar.remindMinutes ?? 0));
+    setMessage(calendar.message ?? "");
+    setLinkedEntryId(calendar.linkedEntryId ?? "");
+    setLocationUrl(calendar.locationUrl ?? "");
+    setFormError("");
+    setShowForm(true);
+  }, [editTarget?.id]);
+
   const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   const firstWeekday = (new Date(month.getFullYear(), month.getMonth(), 1).getDay() + 6) % 7;
   const iso = (day: number) => `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   const calendarEntries = entries.filter((entry) => entry.kind === "calendar" && entry.calendar);
+  const pastAppointments = calendarEntries.filter(isPastAppointment);
   const dayEntries = calendarEntries.filter((entry) => entry.calendar?.start === selected || entry.calendar?.end === selected).sort((a, b) => (a.calendar?.time ?? "").localeCompare(b.calendar?.time ?? ""));
-  const calculatedEnd = (() => { if (!start || !Number(duration)) return ""; const date = new Date(`${start}T00:00:00`); const count = Math.max(1, Number(duration)); if (durationUnit === "years") date.setFullYear(date.getFullYear() + count); else if (durationUnit === "months") date.setMonth(date.getMonth() + count); else date.setDate(date.getDate() + count); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; })();
-  const save = (event: React.FormEvent) => { event.preventDefault(); if (!name.trim() || !start) return; onSave({ id: crypto.randomUUID(), name: name.trim(), category: "บันทึกแจ้งเตือน", kind: "calendar", date: start, actor: "คุณ", calendar: { type, start, end: type === "contract" ? (end || calculatedEnd) : undefined, time, remindMinutes: Number(remindMinutes), message: message.trim(), linkedEntryId: linkedEntryId || undefined } }); setSelected(start); setMonth(new Date(`${start}T00:00:00`)); setShowForm(false); setName(""); setMessage(""); setLinkedEntryId(""); };
-  return <section className="calendar-page"><div className="calendar-toolbar"><div><h2>{ui("ปฏิทินและการแจ้งเตือน", "Calendar & reminders")}</h2><p>{ui("นัดหมาย สัญญา และรายการสำคัญในบ้าน", "Appointments, contracts, and important records")}</p></div><button className="primary-button" type="button" onClick={() => { setStart(selected); setShowForm(true); }}>＋ {ui("เพิ่มลงปฏิทิน", "Add event")}</button></div><div className="calendar-layout"><section className="calendar-panel"><div className="calendar-month-header"><button type="button" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} aria-label={ui("เดือนก่อน", "Previous month")}>‹</button><strong>{month.toLocaleDateString(language === "en" ? "en-GB" : "th-TH", { month: "long", year: "numeric" })}</strong><button type="button" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} aria-label={ui("เดือนถัดไป", "Next month")}>›</button></div><div className="calendar-grid">{(language === "en" ? ["M", "T", "W", "T", "F", "S", "S"] : ["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา"]).map((label, index) => <span className="calendar-weekday" key={`${label}-${index}`}>{label}</span>)}{Array.from({ length: firstWeekday }, (_, index) => <span key={`empty-${index}`}/>)}{Array.from({ length: daysInMonth }, (_, index) => { const date = iso(index + 1); const hasEvent = calendarEntries.some((entry) => entry.calendar?.start === date || entry.calendar?.end === date); return <button type="button" key={date} className={`calendar-cell ${date === selected ? "selected" : ""} ${date === today() ? "today" : ""}`} onClick={() => setSelected(date)}><span>{index + 1}</span>{hasEvent && <i/>}</button>; })}</div></section><section className="calendar-agenda"><h3>{dateLabel(selected, language)}</h3>{dayEntries.length ? dayEntries.map((entry) => <article className="calendar-event" key={entry.id}><button type="button" className="calendar-event-open" onClick={() => onOpenEntry(entry.id)} aria-label={`${ui("ดูรายละเอียด", "View details")}: ${entry.name}`}><span className="calendar-event-icon"><Icon name={entry.calendar?.type === "contract" ? "file" : "calendar"} size={19}/></span><div><strong>{entry.name}</strong><small>{entry.calendar?.type === "contract" ? ui("สัญญา", "Contract") : ui("นัดหมาย", "Appointment")} · {entry.calendar?.time}{entry.calendar?.end && ` · ${ui("สิ้นสุด", "Ends")} ${dateLabel(entry.calendar.end, language)}`}</small>{entry.calendar?.message && <small>{entry.calendar.message}</small>}</div><span className="calendar-event-chevron" aria-hidden="true">›</span></button><button className="row-icon-button delete-icon-button" type="button" onClick={() => onDelete(entry)} aria-label={ui("ลบรายการ", "Delete event")}><Icon name="trash" size={17}/></button></article>) : <p className="calendar-empty-day">{ui("วันนี้ยังไม่มีรายการ", "No events for this day")}</p>}</section></div>{showForm && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowForm(false); }}><form className="entry-modal" onSubmit={save}><div className="modal-top"><div><span className="modal-kicker">{ui("บันทึกแจ้งเตือน", "Reminder")}</span><h2>{ui("เพิ่มลงปฏิทิน", "Add to calendar")}</h2></div><button type="button" className="icon-button" onClick={() => setShowForm(false)}><Icon name="close"/></button></div><label className="form-label">{ui("ชื่อรายการ", "Title")}<input required autoFocus value={name} onChange={(event) => setName(event.target.value)}/></label><label className="form-label">{ui("ประเภท", "Type")}<select value={type} onChange={(event) => setType(event.target.value as "appointment" | "contract")}><option value="appointment">{ui("นัดหมาย", "Appointment")}</option><option value="contract">{ui("สัญญา", "Contract")}</option></select></label><div className="form-row"><label className="form-label">{ui("วันเริ่มต้น", "Start date")}<input type="date" required value={start} onChange={(event) => setStart(event.target.value)}/></label><label className="form-label">{ui("เวลา", "Time")}<input type="time" value={time} onChange={(event) => setTime(event.target.value)}/></label></div>{type === "contract" && <><div className="form-row"><label className="form-label">{ui("ระยะเวลา", "Duration")}<input type="number" min="1" value={duration} onChange={(event) => setDuration(event.target.value)}/></label><label className="form-label">{ui("หน่วย", "Unit")}<select value={durationUnit} onChange={(event) => setDurationUnit(event.target.value as "days" | "months" | "years")}><option value="years">{ui("ปี", "Years")}</option><option value="months">{ui("เดือน", "Months")}</option><option value="days">{ui("วัน", "Days")}</option></select></label></div><label className="form-label">{ui("วันสิ้นสุด (แก้ไขได้)", "End date (editable)")}<input type="date" value={end || calculatedEnd} onChange={(event) => setEnd(event.target.value)}/></label></>}<div className="form-row"><label className="form-label">{ui("แจ้งเตือนก่อน", "Remind before")}<select value={remindMinutes} onChange={(event) => setRemindMinutes(event.target.value)}><option value="0">{ui("เมื่อถึงเวลา", "At event time")}</option><option value="15">15 {ui("นาที", "minutes")}</option><option value="60">1 {ui("ชั่วโมง", "hour")}</option><option value="1440">1 {ui("วัน", "day")}</option><option value="4320">3 {ui("วัน", "days")}</option><option value="10080">7 {ui("วัน", "days")}</option></select></label><label className="form-label">{ui("เชื่อมกับรายการ", "Linked record")}<select value={linkedEntryId} onChange={(event) => setLinkedEntryId(event.target.value)}><option value="">{ui("ไม่เชื่อม", "None")}</option>{entries.filter((entry) => entry.kind !== "calendar").map((entry) => <option value={entry.id} key={entry.id}>{entry.name}</option>)}</select></label></div><label className="form-label">{ui("ข้อความแจ้งเตือน", "Reminder text")}<input value={message} onChange={(event) => setMessage(event.target.value)} placeholder={ui("เช่น อย่าลืมเตรียมเอกสาร", "e.g. Bring the documents")}/></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowForm(false)}>{ui("ยกเลิก", "Cancel")}</button><button type="submit" className="primary-button">{ui("บันทึก", "Save")}</button></div></form></div>}</section>;
-}
+  const calculatedEnd = (() => {
+    if (!start || !Number(duration)) return "";
+    const date = new Date(`${start}T00:00:00`);
+    const count = Math.max(1, Number(duration));
+    if (durationUnit === "years") date.setFullYear(date.getFullYear() + count);
+    else if (durationUnit === "months") date.setMonth(date.getMonth() + count);
+    else date.setDate(date.getDate() + count);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  })();
+  const closeForm = () => { setShowForm(false); setFormError(""); onEditDone(); };
+  const openNew = () => {
+    onEditDone();
+    setName(""); setType("appointment"); setStart(selected); setEnd(""); setDuration("1");
+    setDurationUnit("years"); setTime("09:00"); setRemindMinutes("60");
+    setMessage(""); setLinkedEntryId(""); setLocationUrl(""); setFormError(""); setShowForm(true);
+  };
+  const save = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!name.trim() || !start) return;
+    if (editTarget && isPastAppointment(editTarget)) {
+      setFormError(ui("นัดหมายนี้ผ่านไปแล้ว แก้ไขไม่ได้", "This appointment has passed and cannot be edited."));
+      return;
+    }
+    if (editTarget && type === "appointment" && isPastAppointment({ ...editTarget, calendar: { ...editTarget.calendar!, start, time } })) {
+      setFormError(ui("กรุณาเลือกวันและเวลาที่ยังไม่ผ่านไป", "Choose a future date and time."));
+      return;
+    }
+    const location = type === "appointment" ? locationUrl.trim() : "";
+    if (location && !safeLocationUrl(location)) {
+      setFormError(ui("กรุณาใส่ลิงก์สถานที่ที่ขึ้นต้นด้วย https:// หรือ http://", "Enter a location link starting with https:// or http://"));
+      return;
+    }
+    const calendar: CalendarInfo = {
+      type, start, end: type === "contract" ? (end || calculatedEnd) : undefined,
+      time, remindMinutes: Number(remindMinutes), message: message.trim(),
+      linkedEntryId: linkedEntryId || undefined,
+      locationUrl: location ? safeLocationUrl(location)! : undefined,
+    };
+    if (editTarget) onUpdate({ ...editTarget, name: name.trim(), date: start, calendar });
+    else onSave({ id: crypto.randomUUID(), name: name.trim(), category: "บันทึกแจ้งเตือน", kind: "calendar", date: start, actor: "คุณ", calendar });
+    setSelected(start);
+    setMonth(new Date(`${start}T00:00:00`));
+    closeForm();
+  };
 
-function CalendarDetail({ entry, entries, language, onOpenEntry, onDelete }: { entry: Entry; entries: Entry[]; language: Language; onOpenEntry: (id: string) => void; onDelete: () => void }) {
+  return <section className="calendar-page">
+    <div className="calendar-toolbar"><div><h2>{ui("ปฏิทินและการแจ้งเตือน", "Calendar & reminders")}</h2><p>{ui("นัดหมาย สัญญา และรายการสำคัญในบ้าน", "Appointments, contracts, and important records")}</p></div><button className="primary-button" type="button" onClick={openNew}>＋ {ui("เพิ่มลงปฏิทิน", "Add event")}</button></div>
+    {pastAppointments.length > 0 && <button type="button" className="calendar-clear-past" onClick={onDeletePast}><Icon name="trash" size={16}/>{ui(`ลบนัดหมายที่ผ่านไปแล้วทั้งหมด (${pastAppointments.length})`, `Delete all past appointments (${pastAppointments.length})`)}</button>}
+    <div className="calendar-layout">
+      <section className="calendar-panel">
+        <div className="calendar-month-header"><button type="button" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} aria-label={ui("เดือนก่อน", "Previous month")}>‹</button><strong>{month.toLocaleDateString(language === "en" ? "en-GB" : "th-TH", { month: "long", year: "numeric" })}</strong><button type="button" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} aria-label={ui("เดือนถัดไป", "Next month")}>›</button></div>
+        <div className="calendar-grid">
+          {(language === "en" ? ["M", "T", "W", "T", "F", "S", "S"] : ["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา"]).map((label, index) => <span className="calendar-weekday" key={`${label}-${index}`}>{label}</span>)}
+          {Array.from({ length: firstWeekday }, (_, index) => <span key={`empty-${index}`}/>)}
+          {Array.from({ length: daysInMonth }, (_, index) => {
+            const date = iso(index + 1);
+            const dayEvents = calendarEntries.filter((entry) => entry.calendar?.start === date || entry.calendar?.end === date);
+            const onlyPastAppointments = dayEvents.length > 0 && dayEvents.every(isPastAppointment);
+            return <button type="button" key={date} className={`calendar-cell ${date === selected ? "selected" : ""} ${date === today() ? "today" : ""} ${onlyPastAppointments ? "past" : ""}`} onClick={() => setSelected(date)}><span>{index + 1}</span>{dayEvents.length > 0 && <i/>}</button>;
+          })}
+        </div>
+      </section>
+      <section className="calendar-agenda"><h3>{dateLabel(selected, language)}</h3>
+        {dayEntries.length ? dayEntries.map((entry) => <article className={`calendar-event ${isPastAppointment(entry) ? "past" : ""}`} key={entry.id}><button type="button" className="calendar-event-open" onClick={() => onOpenEntry(entry.id)} aria-label={`${ui("ดูรายละเอียด", "View details")}: ${entry.name}`}><span className="calendar-event-icon"><Icon name={entry.calendar?.type === "contract" ? "file" : "calendar"} size={19}/></span><div><strong>{entry.name}</strong><small>{entry.calendar?.type === "contract" ? ui("สัญญา", "Contract") : ui("นัดหมาย", "Appointment")} · {entry.calendar?.time}{entry.calendar?.end && ` · ${ui("สิ้นสุด", "Ends")} ${dateLabel(entry.calendar.end, language)}`}</small>{isPastAppointment(entry) && <small>{ui("ผ่านไปแล้ว", "Past appointment")}</small>}{entry.calendar?.message && <small>{entry.calendar.message}</small>}</div><span className="calendar-event-chevron" aria-hidden="true">›</span></button><button className="row-icon-button delete-icon-button" type="button" onClick={() => onDelete(entry)} aria-label={ui("ลบรายการ", "Delete event")}><Icon name="trash" size={17}/></button></article>) : <p className="calendar-empty-day">{ui("วันนี้ยังไม่มีรายการ", "No events for this day")}</p>}
+      </section>
+    </div>
+    {showForm && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeForm(); }}><form className="entry-modal" onSubmit={save}><div className="modal-top"><div><span className="modal-kicker">{ui("บันทึกแจ้งเตือน", "Reminder")}</span><h2>{editTarget ? ui("แก้ไขนัดหมาย", "Edit appointment") : ui("เพิ่มลงปฏิทิน", "Add to calendar")}</h2></div><button type="button" className="icon-button" onClick={closeForm} aria-label={ui("ปิด", "Close")}><Icon name="close"/></button></div>
+      {formError && <p className="household-panel-error" role="alert">{formError}</p>}
+      <label className="form-label">{ui("ชื่อรายการ", "Title")}<input required autoFocus value={name} onChange={(event) => setName(event.target.value)}/></label>
+      <label className="form-label">{ui("ประเภท", "Type")}<select value={type} onChange={(event) => setType(event.target.value as "appointment" | "contract")} disabled={Boolean(editTarget)}><option value="appointment">{ui("นัดหมาย", "Appointment")}</option><option value="contract">{ui("สัญญา", "Contract")}</option></select></label>
+      <div className="form-row"><label className="form-label">{ui("วันเริ่มต้น", "Start date")}<input type="date" required value={start} onChange={(event) => setStart(event.target.value)}/></label><label className="form-label">{ui("เวลา", "Time")}<input type="time" value={time} onChange={(event) => setTime(event.target.value)}/></label></div>
+      {type === "contract" && <><div className="form-row"><label className="form-label">{ui("ระยะเวลา", "Duration")}<input type="number" min="1" value={duration} onChange={(event) => setDuration(event.target.value)}/></label><label className="form-label">{ui("หน่วย", "Unit")}<select value={durationUnit} onChange={(event) => setDurationUnit(event.target.value as "days" | "months" | "years")}><option value="years">{ui("ปี", "Years")}</option><option value="months">{ui("เดือน", "Months")}</option><option value="days">{ui("วัน", "Days")}</option></select></label></div><label className="form-label">{ui("วันสิ้นสุด (แก้ไขได้)", "End date (editable)")}<input type="date" value={end || calculatedEnd} onChange={(event) => setEnd(event.target.value)}/></label></>}
+      {type === "appointment" && <label className="form-label">{ui("ลิงก์สถานที่ (Location)", "Location link")}<input type="url" inputMode="url" value={locationUrl} onChange={(event) => setLocationUrl(event.target.value)} placeholder="https://maps.google.com/..."/></label>}
+      <div className="form-row"><label className="form-label">{ui("แจ้งเตือนก่อน", "Remind before")}<select value={remindMinutes} onChange={(event) => setRemindMinutes(event.target.value)}><option value="0">{ui("เมื่อถึงเวลา", "At event time")}</option><option value="15">15 {ui("นาที", "minutes")}</option><option value="60">1 {ui("ชั่วโมง", "hour")}</option><option value="1440">1 {ui("วัน", "day")}</option><option value="4320">3 {ui("วัน", "days")}</option><option value="10080">7 {ui("วัน", "days")}</option></select></label><label className="form-label">{ui("เชื่อมกับรายการ", "Linked record")}<select value={linkedEntryId} onChange={(event) => setLinkedEntryId(event.target.value)}><option value="">{ui("ไม่เชื่อม", "None")}</option>{entries.filter((entry) => entry.kind !== "calendar").map((entry) => <option value={entry.id} key={entry.id}>{entry.name}</option>)}</select></label></div>
+      <label className="form-label">{ui("ข้อความแจ้งเตือน", "Reminder text")}<input value={message} onChange={(event) => setMessage(event.target.value)} placeholder={ui("เช่น อย่าลืมเตรียมเอกสาร", "e.g. Bring the documents")}/></label>
+      <div className="modal-actions"><button type="button" className="secondary-button" onClick={closeForm}>{ui("ยกเลิก", "Cancel")}</button><button type="submit" className="primary-button">{editTarget ? ui("บันทึกการแก้ไข", "Save changes") : ui("บันทึก", "Save")}</button></div>
+    </form></div>}
+  </section>;
+}
+function CalendarDetail({ entry, entries, language, onOpenEntry, onEdit, onDelete }: { entry: Entry; entries: Entry[]; language: Language; onOpenEntry: (id: string) => void; onEdit: () => void; onDelete: () => void }) {
   const calendar = entry.calendar!;
   const ui = (th: string, en: string) => language === "en" ? en : th;
   const linkedEntry = entries.find((item) => item.id === calendar.linkedEntryId);
+  const past = isPastAppointment(entry);
+  const location = safeLocationUrl(calendar.locationUrl);
   const minutes = calendar.remindMinutes ?? 0;
   const reminder = minutes === 0 ? ui("เมื่อถึงเวลา", "At event time") : minutes % 1440 === 0 ? `${minutes / 1440} ${ui("วันก่อน", "days before")}` : minutes % 60 === 0 ? `${minutes / 60} ${ui("ชั่วโมงก่อน", "hours before")}` : `${minutes} ${ui("นาทีก่อน", "minutes before")}`;
-  return <section className="calendar-detail-card">
+  return <section className={`calendar-detail-card ${past ? "past" : ""}`}>
     <span className="calendar-detail-kind">{calendar.type === "contract" ? ui("สัญญา", "Contract") : ui("นัดหมาย", "Appointment")}</span>
+    {past && <span className="calendar-detail-past">{ui("ผ่านไปแล้ว", "Past appointment")}</span>}
     <h2>{entry.name}</h2>
     <dl>
       <div><dt>{ui("วันเริ่มต้น", "Start date")}</dt><dd>{dateLabel(calendar.start, language)}</dd></div>
@@ -727,10 +857,12 @@ function CalendarDetail({ entry, entries, language, onOpenEntry, onDelete }: { e
       <div><dt>{ui("เวลา", "Time")}</dt><dd>{calendar.time || ui("ไม่ระบุ", "Not set")}</dd></div>
       <div><dt>{ui("แจ้งเตือนก่อน", "Reminder")}</dt><dd>{reminder}</dd></div>
       {calendar.message && <div><dt>{ui("ข้อความแจ้งเตือน", "Reminder text")}</dt><dd>{calendar.message}</dd></div>}
+      {location && <div><dt>{ui("สถานที่", "Location")}</dt><dd><a href={location} target="_blank" rel="noopener noreferrer">{ui("เปิดลิงก์สถานที่ ↗", "Open location link ↗")}</a></dd></div>}
       {linkedEntry && <div><dt>{ui("รายการที่เกี่ยวข้อง", "Linked record")}</dt><dd>{linkedEntry.name}</dd></div>}
     </dl>
     <div className="calendar-detail-actions">
       {linkedEntry && <button type="button" className="secondary-button" onClick={() => onOpenEntry(linkedEntry.id)}>{ui("ดูรายการที่เกี่ยวข้อง", "View linked record")}</button>}
+      {calendar.type === "appointment" && !past && <button type="button" className="secondary-button" onClick={onEdit}><Icon name="edit" size={16}/> {ui("แก้ไขนัดหมาย", "Edit appointment")}</button>}
       <button type="button" className="danger-button" onClick={onDelete}><Icon name="trash" size={16}/> {ui("ลบรายการ", "Delete event")}</button>
     </div>
   </section>;

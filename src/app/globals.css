@@ -675,4 +675,13 @@ body{font-size:17px}
 .calendar-detail-card dt{color:var(--muted);font-size:13px}
 .calendar-detail-card dd{margin:0;font-size:14px;font-weight:700;overflow-wrap:anywhere}
 .calendar-detail-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
+.calendar-clear-past{display:inline-flex;align-items:center;gap:7px;margin:-6px 0 17px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--muted);font-size:12px;font-weight:700}
+.calendar-clear-past:hover{border-color:var(--blue);color:var(--blue)}
+.calendar-cell.past:not(.selected){background:color-mix(in srgb,var(--muted) 10%,var(--surface));color:var(--muted)}
+.calendar-event.past .calendar-event-open,.calendar-event.past .calendar-event-icon,.calendar-event.past .calendar-event-chevron{color:var(--muted)}
+.calendar-event.past strong{color:var(--muted)}
+.calendar-detail-card.past{border-color:color-mix(in srgb,var(--muted) 35%,var(--line))}
+.calendar-detail-card.past .calendar-detail-kind{background:color-mix(in srgb,var(--muted) 13%,var(--surface));color:var(--muted)}
+.calendar-detail-past{display:inline-flex;margin-left:8px;color:var(--muted);font-size:12px;font-weight:700}
+.calendar-detail-card dd a{color:var(--blue);text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
 @media(max-width:760px){.is-calendar-view .content-area{display:block;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;padding-bottom:28px}}
