@@ -1,15 +1,16 @@
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
+import { calendarOccurrenceDates, type CalendarRecurrence } from "@/lib/calendar-recurrence";
 
-type ReminderEntry = { id: string; name: string; kind: string; medicine?: { reminders?: { meal: string; time: string; message: string }[] }; calendar?: { type: "appointment" | "contract"; start: string; end?: string; time: string; remindMinutes: number; message: string } };
+type ReminderEntry = { id: string; name: string; kind: string; medicine?: { reminders?: { meal: string; time: string; message: string }[] }; calendar?: { type: "appointment" | "contract"; start: string; end?: string; time: string; remindMinutes: number; message: string; recurrence?: CalendarRecurrence } };
 type Due = { key: string; title: string; body: string; url: string };
 
 function dueFor(entry: ReminderEntry, now: Date): Due[] {
   const windowStart = now.getTime() - 5 * 60_000;
   const due: Due[] = [];
-  const add = (key: string, date: string, time: string, minutesBefore: number, title: string, body: string) => {
+  const add = (key: string, date: string, time: string, minutesBefore: number, title: string, body: string, occurrenceDate?: string) => {
     const timestamp = Date.parse(`${date}T${time || "09:00"}:00+07:00`) - minutesBefore * 60_000;
-    if (timestamp <= now.getTime() && timestamp > windowStart) due.push({ key, title, body, url: `/?item=${encodeURIComponent(entry.id)}` });
+    if (timestamp <= now.getTime() && timestamp > windowStart) due.push({ key, title, body, url: `/?item=${encodeURIComponent(entry.id)}${occurrenceDate ? `&occurrence=${occurrenceDate}` : ""}` });
   };
   if (entry.kind === "item") {
     const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
@@ -19,8 +20,16 @@ function dueFor(entry: ReminderEntry, now: Date): Due[] {
   }
   if (entry.kind === "calendar" && entry.calendar) {
     const event = entry.calendar;
-    const date = event.type === "contract" ? event.end || event.start : event.start;
-    add(`${entry.id}:calendar:${date}:${event.time}`, date, event.time, Math.max(0, event.remindMinutes || 0), entry.name, event.message || (event.type === "contract" ? `สัญญา ${entry.name} จะสิ้นสุด` : `นัดหมาย ${entry.name}`));
+    const minutesBefore = Math.max(0, event.remindMinutes || 0);
+    if (event.type === "contract") {
+      const date = event.end || event.start;
+      add(`${entry.id}:calendar:${date}:${event.time}`, date, event.time, minutesBefore, entry.name, event.message || `สัญญา ${entry.name} จะสิ้นสุด`, date);
+    } else {
+      const bangkokDay = (timestamp: number) => new Date(timestamp + 7 * 60 * 60_000).toISOString().slice(0, 10);
+      const first = bangkokDay(windowStart + minutesBefore * 60_000);
+      const last = bangkokDay(now.getTime() + minutesBefore * 60_000);
+      for (const date of calendarOccurrenceDates(event, first, last)) add(`${entry.id}:calendar:${date}:${event.time}`, date, event.time, minutesBefore, entry.name, event.message || `นัดหมาย ${entry.name}`, date);
+    }
   }
   return due;
 }

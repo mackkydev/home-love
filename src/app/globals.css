@@ -684,4 +684,9 @@ body{font-size:17px}
 .calendar-detail-card.past .calendar-detail-kind{background:color-mix(in srgb,var(--muted) 13%,var(--surface));color:var(--muted)}
 .calendar-detail-past{display:inline-flex;margin-left:8px;color:var(--muted);font-size:12px;font-weight:700}
 .calendar-detail-card dd a{color:var(--blue);text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
+.calendar-repeat-fields{display:grid;gap:12px;margin:12px 0 18px;padding:16px;border:1px solid var(--line);border-radius:16px;background:color-mix(in srgb,var(--surface) 88%,var(--blue) 12%)}
+.calendar-repeat-fields .form-label{margin:0}.calendar-repeat-fields .form-label small{display:block;margin-top:6px;color:var(--muted);font-weight:400}
+.calendar-repeat-weekdays>span{display:block;margin-bottom:9px;font-weight:700;color:var(--muted)}
+.calendar-repeat-weekdays>div{display:flex;flex-wrap:wrap;gap:7px}.calendar-repeat-weekdays button{min-width:39px;min-height:39px;border:1px solid var(--line);border-radius:11px;background:var(--surface);color:inherit;font-weight:700;cursor:pointer}.calendar-repeat-weekdays button.selected{border-color:var(--blue);background:var(--blue);color:white}
+.calendar-repeat-hint{margin:0;color:var(--muted);font-size:.84rem}
 @media(max-width:760px){.is-calendar-view .content-area{display:block;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;padding-bottom:28px}}

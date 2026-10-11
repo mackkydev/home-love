@@ -6,6 +6,7 @@ import CloudAuth from "./CloudAuth";
 import SettingsPage from "./SettingsPage";
 import AdminPanel from "./AdminPanel";
 import PinLock from "./PinLock";
+import { calendarOccursOn, calendarWeekday, calendarDateAtOrBefore, calendarHasPastOccurrence, calendarSeriesFinished, type CalendarRecurrence } from "@/lib/calendar-recurrence";
 
 type Tab = "home" | "items" | "services" | "calendar" | "history" | "settings";
 type AppTheme = "light" | "dark" | "system";
@@ -16,7 +17,7 @@ type Payment = { paidAt: string; startAt: string; amount: number; quantity: numb
 type ServiceAutoUse = { amount: number; everyDays: number; anchorDate: string; baseRemaining: number };
 type Attachment = { name: string; data: string; type: string };
 type Purchase = { id: string; date: string; store: string; price: number; quantity: number };
-type CalendarInfo = { type: "appointment" | "contract"; start: string; end?: string; time: string; remindMinutes: number; message: string; linkedEntryId?: string; locationUrl?: string };
+type CalendarInfo = { type: "appointment" | "contract"; start: string; end?: string; time: string; remindMinutes: number; message: string; linkedEntryId?: string; locationUrl?: string; recurrence?: CalendarRecurrence };
 type Entry = {
   id: string;
   name: string;
@@ -51,8 +52,30 @@ type StockInfo = { quantity: number; dailyUse: number; unit: string; alertDays: 
 
 function isPastAppointment(entry: Entry): boolean {
   if (entry.kind !== "calendar" || entry.calendar?.type !== "appointment" || !entry.calendar.start) return false;
-  const scheduled = new Date(`${entry.calendar.start}T${entry.calendar.time || "23:59"}:00`);
-  return !Number.isNaN(scheduled.getTime()) && scheduled.getTime() < Date.now();
+  return calendarSeriesFinished(entry.calendar);
+}
+
+function isPastOccurrence(entry: Entry, date: string): boolean {
+  return entry.calendar?.type === "appointment" && calendarDateAtOrBefore(date, entry.calendar.time);
+}
+
+function calendarEntryOccursOn(entry: Entry, date: string): boolean {
+  const calendar = entry.calendar;
+  return Boolean(calendar && (calendar.type === "appointment" ? calendarOccursOn(calendar, date) : calendar.start === date || calendar.end === date));
+}
+
+function recurrenceLabel(repeat: CalendarRecurrence | undefined, language: Language): string {
+  if (!repeat) return language === "en" ? "Does not repeat" : "ไม่ทำซ้ำ";
+  const n = Math.max(1, repeat.interval || 1);
+  const unit = repeat.frequency === "daily" ? ["วัน", "day"] : repeat.frequency === "weekly" ? ["สัปดาห์", "week"] : repeat.frequency === "monthly" ? ["เดือน", "month"] : ["ปี", "year"];
+  let label = language === "en" ? `Every ${n} ${unit[1]}${n > 1 ? "s" : ""}` : `ทุก ${n} ${unit[0]}`;
+  if (repeat.frequency === "weekly") {
+    const days = language === "en" ? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] : ["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา"];
+    label += ` · ${(repeat.weekdays ?? []).map((day) => days[day]).filter(Boolean).join(", ")}`;
+  }
+  if (repeat.frequency === "monthly" && repeat.monthlyDay) label += repeat.monthlyDay === "last" ? (language === "en" ? " · Last day" : " · วันสุดท้าย") : ` · ${language === "en" ? "day" : "วันที่"} ${repeat.monthlyDay}`;
+  if (repeat.until) label += ` · ${language === "en" ? "until" : "ถึง"} ${dateLabel(repeat.until, language)}`;
+  return label;
 }
 
 function safeLocationUrl(value?: string): string | null {
@@ -184,9 +207,11 @@ export default function Home() {
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Entry | null>(null);
   const [deletePastAppointmentsOpen, setDeletePastAppointmentsOpen] = useState(false);
+  const [deleteOccurrenceTarget, setDeleteOccurrenceTarget] = useState<{ entry: Entry; date: string } | null>(null);
   const [calendarEditId, setCalendarEditId] = useState<string | null>(null);
   const [photoDeleteTarget, setPhotoDeleteTarget] = useState<{ kind: "form"; index: number } | { kind: "attachment"; index: number } | { kind: "entry"; entryId: string; index: number } | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [selectedOccurrenceDate, setSelectedOccurrenceDate] = useState<string | null>(null);
   const [backupBusy, setBackupBusy] = useState(false);
   const [extraCategories, setExtraCategories] = useState<{ name: string; icon: string; color: string }[]>([]);
   const [search, setSearch] = useState("");
@@ -329,7 +354,7 @@ export default function Home() {
   }, []);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(""), 2600); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => {
-    const syncDetail = () => setSelectedEntryId(new URL(window.location.href).searchParams.get("item"));
+    const syncDetail = () => { const params = new URL(window.location.href).searchParams; setSelectedEntryId(params.get("item")); setSelectedOccurrenceDate(params.get("occurrence")); };
     syncDetail();
     window.addEventListener("popstate", syncDetail);
     return () => window.removeEventListener("popstate", syncDetail);
@@ -478,6 +503,18 @@ export default function Home() {
     setEntries((prev) => [newEntry, ...prev]); setModal(null); setTab(entryKind === "service" ? "services" : "items"); setNotice("เพิ่มรายการเรียบร้อยแล้ว");
   };
   const removeEntry = (entry: Entry) => setDeleteTarget(entry);
+  const removeCalendarOccurrence = (entry: Entry, date: string) => {
+    if (entry.calendar?.recurrence) setDeleteOccurrenceTarget({ entry, date });
+    else removeEntry(entry);
+  };
+  const confirmRemoveOccurrence = () => {
+    if (!deleteOccurrenceTarget) return;
+    const { entry, date } = deleteOccurrenceTarget;
+    setEntries((current) => current.map((item) => item.id === entry.id && item.calendar?.recurrence ? { ...item, calendar: { ...item.calendar, recurrence: { ...item.calendar.recurrence, excludedDates: [...new Set([...(item.calendar.recurrence.excludedDates ?? []), date])] } } } : item));
+    setDeleteOccurrenceTarget(null);
+    if (selectedEntryId === entry.id) closeDetail();
+    setNotice(ui("ลบนัดหมายครั้งนี้แล้ว", "This occurrence was deleted"));
+  };
   const confirmRemove = () => {
     if (!deleteTarget) return;
     setEntries((prev) => prev.filter((item) => item.id !== deleteTarget.id));
@@ -486,8 +523,14 @@ export default function Home() {
     setDeleteTarget(null);
   };
   const confirmRemovePastAppointments = () => {
-    const pastIds = new Set(entries.filter(isPastAppointment).map((entry) => entry.id));
-    if (pastIds.size) setEntries((current) => current.filter((entry) => !pastIds.has(entry.id)));
+    const currentDay = today();
+    const tomorrow = new Date(Date.parse(`${currentDay}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+    const pastIds = new Set(entries.filter((entry) => isPastAppointment(entry)).map((entry) => entry.id));
+    setEntries((current) => current.filter((entry) => !pastIds.has(entry.id)).map((entry) => {
+      if (entry.calendar?.type !== "appointment" || !entry.calendar.recurrence || !calendarHasPastOccurrence(entry.calendar)) return entry;
+      const cutoff = calendarOccursOn(entry.calendar, currentDay) && isPastOccurrence(entry, currentDay) ? tomorrow : currentDay;
+      return { ...entry, calendar: { ...entry.calendar, recurrence: { ...entry.calendar.recurrence, excludedBefore: cutoff } } };
+    }));
     if (selectedEntryId && pastIds.has(selectedEntryId)) {
       setSelectedEntryId(null);
       const url = new URL(window.location.href);
@@ -495,7 +538,7 @@ export default function Home() {
       window.history.replaceState(null, "", url);
     }
     setDeletePastAppointmentsOpen(false);
-    setNotice(language === "en" ? `Deleted ${pastIds.size} past appointments` : `ลบนัดหมายที่ผ่านไปแล้ว ${pastIds.size} รายการ`);
+    setNotice(ui("ลบนัดหมายที่ผ่านไปแล้ว", "Past appointments deleted"));
   };
   const confirmPhotoRemove = () => {
     if (!photoDeleteTarget) return;
@@ -536,8 +579,8 @@ export default function Home() {
     } catch (cause) { setNotice(ui("สำรองข้อมูลไม่สำเร็จ: ", "Backup failed: ") + (cause instanceof Error ? cause.message : String(cause))); }
     finally { setBackupBusy(false); }
   };
-  const openDetail = (id: string) => { const url = new URL(window.location.href); url.searchParams.set("item", id); window.history.pushState({ homeLoveDetail: true }, "", url); setSelectedEntryId(id); };
-  const closeDetail = () => { if (window.history.state?.homeLoveDetail) window.history.back(); else { const url = new URL(window.location.href); url.searchParams.delete("item"); window.history.replaceState(null, "", url); setSelectedEntryId(null); } };
+  const openDetail = (id: string, occurrenceDate?: string) => { const url = new URL(window.location.href); url.searchParams.set("item", id); if (occurrenceDate) url.searchParams.set("occurrence", occurrenceDate); else url.searchParams.delete("occurrence"); window.history.pushState({ homeLoveDetail: true }, "", url); setSelectedEntryId(id); setSelectedOccurrenceDate(occurrenceDate ?? null); };
+  const closeDetail = () => { if (window.history.state?.homeLoveDetail) window.history.back(); else { const url = new URL(window.location.href); url.searchParams.delete("item"); url.searchParams.delete("occurrence"); window.history.replaceState(null, "", url); setSelectedEntryId(null); setSelectedOccurrenceDate(null); } };
 
   const flushCurrentHousehold = async () => {
     switchingHouseholdRef.current = true;
@@ -625,7 +668,7 @@ export default function Home() {
 
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId);
   const calendarEditTarget = entries.find((entry) => entry.id === calendarEditId);
-  const pastAppointmentCount = entries.filter(isPastAppointment).length;
+  const pastAppointmentCount = entries.filter((entry) => entry.calendar?.type === "appointment" && calendarHasPastOccurrence(entry.calendar)).length;
   return <main className={`app-shell ${tab !== "home" && tab !== "settings" ? "is-list-view" : ""} ${tab === "calendar" ? "is-calendar-view" : ""}`}>
     <aside className="sidebar">
       <a className="brand" href="#home" onClick={() => setTab("home")}><span className="brand-mark"><Icon name="home" size={21}/></span><span><strong>บ้านของเรา</strong><small>HOME ORGANIZER</small></span></a>
@@ -648,7 +691,7 @@ export default function Home() {
         {tab === "settings" ? <SettingsPage houses={households} activeId={householdId} defaultHouseholdId={defaultHouseholdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} displaySettings={displaySettings} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onMakeDefault={(id) => void makeDefaultHousehold(id)} onRename={(id, name) => renameCurrentHousehold(id, name)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => void signOut()}/> : <>
         <section className="welcome-row"><div><div className="eyebrow"><span className="eyebrow-dot"/> {headerDate}</div><h1>{tab === "home" ? <>{copy.hello} <span>✳</span></> : (navItems.find((item) => item.id === tab)?.label ?? (tab === "calendar" ? ui("บันทึกแจ้งเตือน", "Calendar") : copy.history))}</h1><p>{tab === "home" ? copy.intro : language === "en" ? "Manage and search home information in one place." : "จัดการและค้นหาข้อมูลของบ้านได้ในที่เดียว"}</p></div><button className="primary-button desktop-add" onClick={() => openModal(tab === "services" ? "service" : tab === "items" && category === "เอกสาร" ? "note" : "item")}><span>＋</span> {copy.add}</button></section>
 
-        {tab === "calendar" ? <CalendarPage entries={entries} language={language} editTarget={calendarEditTarget} onEditDone={() => setCalendarEditId(null)} onSave={(entry) => setEntries((previous) => [entry, ...previous])} onUpdate={(updated) => setEntries((previous) => previous.map((entry) => entry.id === updated.id ? updated : entry))} onDelete={(entry) => removeEntry(entry)} onDeletePast={() => setDeletePastAppointmentsOpen(true)} onOpenEntry={(id) => openDetail(id)}/> : tab === "home" ? <>
+        {tab === "calendar" ? <CalendarPage entries={entries} language={language} editTarget={calendarEditTarget} onEditDone={() => setCalendarEditId(null)} onSave={(entry) => setEntries((previous) => [entry, ...previous])} onUpdate={(updated) => setEntries((previous) => previous.map((entry) => entry.id === updated.id ? updated : entry))} onDelete={removeCalendarOccurrence} onDeletePast={() => setDeletePastAppointmentsOpen(true)} onOpenEntry={openDetail}/> : tab === "home" ? <>
           <section className="summary-grid">
             <article className="summary-card blue-summary"><div className="summary-top"><span>{ui("ค่าใช้จ่ายเดือนนี้", "This month's expenses")}</span><span className="summary-icon"><Icon name="wallet" size={19}/></span></div><strong className="summary-number">฿{currency(spent)}</strong><div className="summary-foot"><span className="summary-trend">↗</span> {ui("รวมรายการซื้อในเดือนนี้", "All purchases this month")}</div><div className="summary-decoration"/></article>
             <article className="summary-card income-summary"><div className="summary-top"><span>{ui("รายรับเดือนนี้", "This month's income")}</span><span className="summary-icon income-icon"><Icon name="wallet" size={19}/></span></div><strong className="summary-number">฿{currency(income)}</strong><div className="summary-foot">{ui("รวมเงินเข้าของครัวเรือน", "All household income")}</div><div className="mini-bars"><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/></div></article>
@@ -671,7 +714,7 @@ export default function Home() {
 
     {selectedEntryId && <section className="detail-page" aria-label={ui("รายละเอียดรายการ", "Record details")}>
       <header className="detail-page-header"><button type="button" className="detail-back-button" onClick={closeDetail} aria-label={ui("กลับ", "Back")}><Icon name="chevron" size={20}/></button><div><small>{ui("รายละเอียดรายการ", "Record details")}</small><strong>{selectedEntry?.name ?? ui("ไม่พบรายการ", "Record not found")}</strong></div></header>
-      <div className="detail-page-body">{selectedEntry ? <>{selectedEntry.kind === "calendar" && selectedEntry.calendar ? <CalendarDetail entry={selectedEntry} entries={entries} language={language} onOpenEntry={openDetail} onEdit={() => { if (!isPastAppointment(selectedEntry)) { setCalendarEditId(selectedEntry.id); closeDetail(); } }} onDelete={() => removeEntry(selectedEntry)}/> : <EntryRow entry={selectedEntry} language={language} detailMode onDeletePhoto={(index) => setPhotoDeleteTarget({ kind: "entry", entryId: selectedEntry.id, index })} onConsume={() => consumed(selectedEntry)} onStockUse={() => recordStockUse(selectedEntry)} onEdit={() => editEntry(selectedEntry)} onRenew={() => renewService(selectedEntry)} onBuyAgain={() => buyAgain(selectedEntry)} onRemove={() => removeEntry(selectedEntry)} onProgressStyle={(style) => setEntries((prev) => prev.map((entry) => entry.id === selectedEntry.id ? { ...entry, progressStyle: style } : entry))}/>}{Boolean(selectedEntry.medicine?.reminders?.length) && <section className="purchase-history"><div className="section-heading"><h2>{ui("เวลาแจ้งเตือน", "Reminder times")}</h2></div>{selectedEntry.medicine?.reminders?.map((reminder) => <div className="purchase-history-row" key={reminder.meal}><span>{reminder.meal} · {reminder.message || `${ui("ถึงเวลากิน", "Time for")} ${selectedEntry.name}`}</span><strong>{reminder.time}</strong></div>)}</section>}{selectedEntry.kind === "item" && !isIncomeEntry(selectedEntry) && <section className="purchase-history"><div className="section-heading"><h2>{ui("ประวัติการซื้อ", "Purchase history")}</h2><button type="button" className="primary-button" onClick={() => buyAgain(selectedEntry)}>＋ {ui("ซื้ออีกครั้ง", "Buy again")}</button></div>{(selectedEntry.purchases ?? (selectedEntry.price != null ? [{ id: `original-${selectedEntry.id}`, date: selectedEntry.date, store: selectedEntry.store ?? "", price: selectedEntry.price, quantity: 1 }] : [])).slice().reverse().map((purchase) => <div className="purchase-history-row" key={purchase.id}><span>{dateLabel(purchase.date, language)} · {purchase.store || ui("ไม่ระบุร้าน", "No store")} · {purchase.quantity} {ui("ชิ้น", "items")}</span><strong>฿{currency(purchase.price)}</strong></div>)}</section>}</> : <div className="empty-state"><strong>{ui("ไม่พบรายการนี้", "Record not found")}</strong><button type="button" className="primary-button" onClick={closeDetail}>{ui("กลับ", "Back")}</button></div>}</div>
+      <div className="detail-page-body">{selectedEntry ? <>{selectedEntry.kind === "calendar" && selectedEntry.calendar ? <CalendarDetail entry={selectedEntry} entries={entries} language={language} occurrenceDate={selectedOccurrenceDate ?? selectedEntry.calendar.start} onOpenEntry={openDetail} onEdit={() => { if (!isPastOccurrence(selectedEntry, selectedOccurrenceDate ?? selectedEntry.calendar!.start)) { setCalendarEditId(selectedEntry.id); closeDetail(); } }} onDelete={() => removeCalendarOccurrence(selectedEntry, selectedOccurrenceDate ?? selectedEntry.calendar!.start)}/> : <EntryRow entry={selectedEntry} language={language} detailMode onDeletePhoto={(index) => setPhotoDeleteTarget({ kind: "entry", entryId: selectedEntry.id, index })} onConsume={() => consumed(selectedEntry)} onStockUse={() => recordStockUse(selectedEntry)} onEdit={() => editEntry(selectedEntry)} onRenew={() => renewService(selectedEntry)} onBuyAgain={() => buyAgain(selectedEntry)} onRemove={() => removeEntry(selectedEntry)} onProgressStyle={(style) => setEntries((prev) => prev.map((entry) => entry.id === selectedEntry.id ? { ...entry, progressStyle: style } : entry))}/>}{Boolean(selectedEntry.medicine?.reminders?.length) && <section className="purchase-history"><div className="section-heading"><h2>{ui("เวลาแจ้งเตือน", "Reminder times")}</h2></div>{selectedEntry.medicine?.reminders?.map((reminder) => <div className="purchase-history-row" key={reminder.meal}><span>{reminder.meal} · {reminder.message || `${ui("ถึงเวลากิน", "Time for")} ${selectedEntry.name}`}</span><strong>{reminder.time}</strong></div>)}</section>}{selectedEntry.kind === "item" && !isIncomeEntry(selectedEntry) && <section className="purchase-history"><div className="section-heading"><h2>{ui("ประวัติการซื้อ", "Purchase history")}</h2><button type="button" className="primary-button" onClick={() => buyAgain(selectedEntry)}>＋ {ui("ซื้ออีกครั้ง", "Buy again")}</button></div>{(selectedEntry.purchases ?? (selectedEntry.price != null ? [{ id: `original-${selectedEntry.id}`, date: selectedEntry.date, store: selectedEntry.store ?? "", price: selectedEntry.price, quantity: 1 }] : [])).slice().reverse().map((purchase) => <div className="purchase-history-row" key={purchase.id}><span>{dateLabel(purchase.date, language)} · {purchase.store || ui("ไม่ระบุร้าน", "No store")} · {purchase.quantity} {ui("ชิ้น", "items")}</span><strong>฿{currency(purchase.price)}</strong></div>)}</section>}</> : <div className="empty-state"><strong>{ui("ไม่พบรายการนี้", "Record not found")}</strong><button type="button" className="primary-button" onClick={closeDetail}>{ui("กลับ", "Back")}</button></div>}</div>
     </section>}
 
     {cloudEnabled && appAdmin && showAdmin && <AdminPanel language={language} onClose={() => setShowAdmin(false)}/>}
@@ -710,6 +753,7 @@ export default function Home() {
       </form>
     </div>}
     {deleteTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDeleteTarget(null); }}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-description"><span className="confirm-icon"><Icon name="trash" size={22}/></span><h2 id="delete-title">ลบรายการนี้?</h2><p id="delete-description">ต้องการลบ <strong>“{deleteTarget.name}”</strong> ใช่ไหม<br/>การลบนี้ไม่สามารถย้อนกลับได้</p><div className="confirm-actions"><button className="secondary-button" onClick={() => setDeleteTarget(null)}>ยกเลิก</button><button className="danger-button" onClick={confirmRemove}><Icon name="trash" size={16}/> ลบรายการ</button></div></section></div>}
+    {deleteOccurrenceTarget && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDeleteOccurrenceTarget(null); }}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-occurrence-title"><span className="confirm-icon"><Icon name="trash" size={22}/></span><h2 id="delete-occurrence-title">{ui("ลบนัดหมายที่ทำซ้ำ?", "Delete recurring appointment?")}</h2><p><strong>“{deleteOccurrenceTarget.entry.name}”</strong> · {dateLabel(deleteOccurrenceTarget.date, language)}</p><div className="confirm-actions"><button type="button" className="secondary-button" onClick={() => setDeleteOccurrenceTarget(null)}>{ui("ยกเลิก", "Cancel")}</button><button type="button" className="danger-button" onClick={confirmRemoveOccurrence}>{ui("ลบเฉพาะครั้งนี้", "This occurrence")}</button><button type="button" className="danger-button" onClick={() => { const entry = deleteOccurrenceTarget.entry; setDeleteOccurrenceTarget(null); removeEntry(entry); }}>{ui("ลบทั้งชุด", "Entire series")}</button></div></section></div>}
     {deletePastAppointmentsOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDeletePastAppointmentsOpen(false); }}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-past-title" aria-describedby="delete-past-description"><span className="confirm-icon"><Icon name="trash" size={22}/></span><h2 id="delete-past-title">{ui("ลบนัดหมายที่ผ่านไปแล้ว?", "Delete past appointments?")}</h2><p id="delete-past-description">{ui(`จะลบนัดหมายที่ผ่านไปแล้ว ${pastAppointmentCount} รายการ การลบนี้ไม่สามารถย้อนกลับได้`, `This will delete ${pastAppointmentCount} past appointments. This cannot be undone.`)}</p><div className="confirm-actions"><button type="button" className="secondary-button" onClick={() => setDeletePastAppointmentsOpen(false)}>{ui("ยกเลิก", "Cancel")}</button><button type="button" className="danger-button" disabled={pastAppointmentCount === 0} onClick={confirmRemovePastAppointments}><Icon name="trash" size={16}/>{ui("ลบทั้งหมด", "Delete all")}</button></div></section></div>}
     {photoDeleteTarget && <div className="modal-backdrop photo-confirm-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPhotoDeleteTarget(null); }}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="photo-delete-title" aria-describedby="photo-delete-description"><span className="confirm-icon"><Icon name="trash" size={22}/></span><h2 id="photo-delete-title">{photoDeleteTarget.kind === "attachment" ? ui("ลบไฟล์แนบนี้?", "Delete this attachment?") : ui("ลบรูปภาพนี้?", "Delete this photo?")}</h2><p id="photo-delete-description">{ui("ไฟล์ที่ลบจากรายการจะถูกลบจากที่เก็บออนไลน์หลังบันทึกข้อมูล", "The file will also be removed from online storage after the record is saved.")}</p><div className="confirm-actions"><button type="button" className="secondary-button" onClick={() => setPhotoDeleteTarget(null)}>{ui("ยกเลิก", "Cancel")}</button><button type="button" className="danger-button" onClick={confirmPhotoRemove}><Icon name="trash" size={16}/>{ui("ลบไฟล์", "Delete file")}</button></div></section></div>}
     {notice && <div className="toast"><span><Icon name="check" size={15}/></span>{notice}</div>}
@@ -719,7 +763,7 @@ export default function Home() {
 function CalendarPage({ entries, language, editTarget, onEditDone, onSave, onUpdate, onDelete, onDeletePast, onOpenEntry }: {
   entries: Entry[]; language: Language; editTarget?: Entry; onEditDone: () => void;
   onSave: (entry: Entry) => void; onUpdate: (entry: Entry) => void;
-  onDelete: (entry: Entry) => void; onDeletePast: () => void; onOpenEntry: (id: string) => void;
+  onDelete: (entry: Entry, occurrenceDate: string) => void; onDeletePast: () => void; onOpenEntry: (id: string, occurrenceDate?: string) => void;
 }) {
   const ui = (th: string, en: string) => language === "en" ? en : th;
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
@@ -736,6 +780,11 @@ function CalendarPage({ entries, language, editTarget, onEditDone, onSave, onUpd
   const [message, setMessage] = useState("");
   const [linkedEntryId, setLinkedEntryId] = useState("");
   const [locationUrl, setLocationUrl] = useState("");
+  const [repeatFrequency, setRepeatFrequency] = useState<"none" | CalendarRecurrence["frequency"]>("none");
+  const [repeatInterval, setRepeatInterval] = useState("1");
+  const [repeatWeekdays, setRepeatWeekdays] = useState<number[]>([calendarWeekday(today())]);
+  const [repeatMonthlyDay, setRepeatMonthlyDay] = useState("start");
+  const [repeatUntil, setRepeatUntil] = useState("");
   const [formError, setFormError] = useState("");
 
   useEffect(() => {
@@ -750,6 +799,11 @@ function CalendarPage({ entries, language, editTarget, onEditDone, onSave, onUpd
     setMessage(calendar.message ?? "");
     setLinkedEntryId(calendar.linkedEntryId ?? "");
     setLocationUrl(calendar.locationUrl ?? "");
+    setRepeatFrequency(calendar.recurrence?.frequency ?? "none");
+    setRepeatInterval(String(calendar.recurrence?.interval ?? 1));
+    setRepeatWeekdays(calendar.recurrence?.weekdays ?? [calendarWeekday(calendar.start)]);
+    setRepeatMonthlyDay(String(calendar.recurrence?.monthlyDay ?? "start"));
+    setRepeatUntil(calendar.recurrence?.until ?? "");
     setFormError("");
     setShowForm(true);
   }, [editTarget?.id]);
@@ -758,8 +812,8 @@ function CalendarPage({ entries, language, editTarget, onEditDone, onSave, onUpd
   const firstWeekday = (new Date(month.getFullYear(), month.getMonth(), 1).getDay() + 6) % 7;
   const iso = (day: number) => `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   const calendarEntries = entries.filter((entry) => entry.kind === "calendar" && entry.calendar);
-  const pastAppointments = calendarEntries.filter(isPastAppointment);
-  const dayEntries = calendarEntries.filter((entry) => entry.calendar?.start === selected || entry.calendar?.end === selected).sort((a, b) => (a.calendar?.time ?? "").localeCompare(b.calendar?.time ?? ""));
+  const pastAppointments = calendarEntries.filter((entry) => entry.calendar?.type === "appointment" && calendarHasPastOccurrence(entry.calendar));
+  const dayEntries = calendarEntries.filter((entry) => calendarEntryOccursOn(entry, selected)).sort((a, b) => (a.calendar?.time ?? "").localeCompare(b.calendar?.time ?? ""));
   const calculatedEnd = (() => {
     if (!start || !Number(duration)) return "";
     const date = new Date(`${start}T00:00:00`);
@@ -774,7 +828,7 @@ function CalendarPage({ entries, language, editTarget, onEditDone, onSave, onUpd
     onEditDone();
     setName(""); setType("appointment"); setStart(selected); setEnd(""); setDuration("1");
     setDurationUnit("years"); setTime("09:00"); setRemindMinutes("60");
-    setMessage(""); setLinkedEntryId(""); setLocationUrl(""); setFormError(""); setShowForm(true);
+    setMessage(""); setLinkedEntryId(""); setLocationUrl(""); setRepeatFrequency("none"); setRepeatInterval("1"); setRepeatWeekdays([calendarWeekday(selected)]); setRepeatMonthlyDay("start"); setRepeatUntil(""); setFormError(""); setShowForm(true);
   };
   const save = (event: React.FormEvent) => {
     event.preventDefault();
@@ -783,10 +837,11 @@ function CalendarPage({ entries, language, editTarget, onEditDone, onSave, onUpd
       setFormError(ui("นัดหมายนี้ผ่านไปแล้ว แก้ไขไม่ได้", "This appointment has passed and cannot be edited."));
       return;
     }
-    if (editTarget && type === "appointment" && isPastAppointment({ ...editTarget, calendar: { ...editTarget.calendar!, start, time } })) {
-      setFormError(ui("กรุณาเลือกวันและเวลาที่ยังไม่ผ่านไป", "Choose a future date and time."));
-      return;
-    }
+    const interval = Number(repeatInterval);
+    if (type === "appointment" && repeatFrequency !== "none" && (!Number.isInteger(interval) || interval < 1 || interval > 365)) { setFormError(ui("ระบุรอบทำซ้ำเป็นจำนวนเต็ม 1–365", "Enter a repeat interval from 1 to 365.")); return; }
+    if (type === "appointment" && repeatFrequency === "weekly" && repeatWeekdays.length === 0) { setFormError(ui("เลือกอย่างน้อย 1 วันในสัปดาห์", "Select at least one weekday.")); return; }
+    if (type === "appointment" && repeatFrequency !== "none" && repeatUntil && repeatUntil < start) { setFormError(ui("วันสิ้นสุดการทำซ้ำต้องไม่ก่อนวันเริ่มต้น", "Repeat end date must not be before the start date.")); return; }
+    if (editTarget && type === "appointment" && repeatFrequency === "none" && calendarDateAtOrBefore(start, time)) { setFormError(ui("กรุณาเลือกวันและเวลาที่ยังไม่ผ่านไป", "Choose a future date and time.")); return; }
     const location = type === "appointment" ? locationUrl.trim() : "";
     if (location && !safeLocationUrl(location)) {
       setFormError(ui("กรุณาใส่ลิงก์สถานที่ที่ขึ้นต้นด้วย https:// หรือ http://", "Enter a location link starting with https:// or http://"));
@@ -797,6 +852,14 @@ function CalendarPage({ entries, language, editTarget, onEditDone, onSave, onUpd
       time, remindMinutes: Number(remindMinutes), message: message.trim(),
       linkedEntryId: linkedEntryId || undefined,
       locationUrl: location ? safeLocationUrl(location)! : undefined,
+      recurrence: type === "appointment" && repeatFrequency !== "none" ? {
+        frequency: repeatFrequency, interval,
+        weekdays: repeatFrequency === "weekly" ? [...repeatWeekdays].sort((a, b) => a - b) : undefined,
+        monthlyDay: repeatFrequency === "monthly" ? repeatMonthlyDay === "last" ? "last" : repeatMonthlyDay === "start" ? Number(start.slice(8, 10)) : Number(repeatMonthlyDay) : undefined,
+        until: repeatUntil || undefined,
+        excludedDates: editTarget?.calendar?.recurrence?.excludedDates,
+        excludedBefore: editTarget?.calendar?.recurrence?.excludedBefore,
+      } : undefined,
     };
     if (editTarget) onUpdate({ ...editTarget, name: name.trim(), date: start, calendar });
     else onSave({ id: crypto.randomUUID(), name: name.trim(), category: "บันทึกแจ้งเตือน", kind: "calendar", date: start, actor: "คุณ", calendar });
@@ -816,34 +879,40 @@ function CalendarPage({ entries, language, editTarget, onEditDone, onSave, onUpd
           {Array.from({ length: firstWeekday }, (_, index) => <span key={`empty-${index}`}/>)}
           {Array.from({ length: daysInMonth }, (_, index) => {
             const date = iso(index + 1);
-            const dayEvents = calendarEntries.filter((entry) => entry.calendar?.start === date || entry.calendar?.end === date);
-            const onlyPastAppointments = dayEvents.length > 0 && dayEvents.every(isPastAppointment);
+            const dayEvents = calendarEntries.filter((entry) => calendarEntryOccursOn(entry, date));
+            const onlyPastAppointments = dayEvents.length > 0 && dayEvents.every((entry) => isPastOccurrence(entry, date));
             return <button type="button" key={date} className={`calendar-cell ${date === selected ? "selected" : ""} ${date === today() ? "today" : ""} ${onlyPastAppointments ? "past" : ""}`} onClick={() => setSelected(date)}><span>{index + 1}</span>{dayEvents.length > 0 && <i/>}</button>;
           })}
         </div>
       </section>
       <section className="calendar-agenda"><h3>{dateLabel(selected, language)}</h3>
-        {dayEntries.length ? dayEntries.map((entry) => <article className={`calendar-event ${isPastAppointment(entry) ? "past" : ""}`} key={entry.id}><button type="button" className="calendar-event-open" onClick={() => onOpenEntry(entry.id)} aria-label={`${ui("ดูรายละเอียด", "View details")}: ${entry.name}`}><span className="calendar-event-icon"><Icon name={entry.calendar?.type === "contract" ? "file" : "calendar"} size={19}/></span><div><strong>{entry.name}</strong><small>{entry.calendar?.type === "contract" ? ui("สัญญา", "Contract") : ui("นัดหมาย", "Appointment")} · {entry.calendar?.time}{entry.calendar?.end && ` · ${ui("สิ้นสุด", "Ends")} ${dateLabel(entry.calendar.end, language)}`}</small>{isPastAppointment(entry) && <small>{ui("ผ่านไปแล้ว", "Past appointment")}</small>}{entry.calendar?.message && <small>{entry.calendar.message}</small>}</div><span className="calendar-event-chevron" aria-hidden="true">›</span></button><button className="row-icon-button delete-icon-button" type="button" onClick={() => onDelete(entry)} aria-label={ui("ลบรายการ", "Delete event")}><Icon name="trash" size={17}/></button></article>) : <p className="calendar-empty-day">{ui("วันนี้ยังไม่มีรายการ", "No events for this day")}</p>}
+        {dayEntries.length ? dayEntries.map((entry) => <article className={`calendar-event ${isPastOccurrence(entry, selected) ? "past" : ""}`} key={entry.id}><button type="button" className="calendar-event-open" onClick={() => onOpenEntry(entry.id, selected)} aria-label={`${ui("ดูรายละเอียด", "View details")}: ${entry.name}`}><span className="calendar-event-icon"><Icon name={entry.calendar?.type === "contract" ? "file" : "calendar"} size={19}/></span><div><strong>{entry.name}</strong><small>{entry.calendar?.type === "contract" ? ui("สัญญา", "Contract") : ui("นัดหมาย", "Appointment")} · {entry.calendar?.time}{entry.calendar?.end && ` · ${ui("สิ้นสุด", "Ends")} ${dateLabel(entry.calendar.end, language)}`}</small>{entry.calendar?.recurrence && <small>{recurrenceLabel(entry.calendar.recurrence, language)}</small>}{isPastOccurrence(entry, selected) && <small>{ui("ผ่านไปแล้ว", "Past appointment")}</small>}{entry.calendar?.message && <small>{entry.calendar.message}</small>}</div><span className="calendar-event-chevron" aria-hidden="true">›</span></button><button className="row-icon-button delete-icon-button" type="button" onClick={() => onDelete(entry, selected)} aria-label={ui("ลบรายการ", "Delete event")}><Icon name="trash" size={17}/></button></article>) : <p className="calendar-empty-day">{ui("วันนี้ยังไม่มีรายการ", "No events for this day")}</p>}
       </section>
     </div>
     {showForm && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeForm(); }}><form className="entry-modal" onSubmit={save}><div className="modal-top"><div><span className="modal-kicker">{ui("บันทึกแจ้งเตือน", "Reminder")}</span><h2>{editTarget ? ui("แก้ไขนัดหมาย", "Edit appointment") : ui("เพิ่มลงปฏิทิน", "Add to calendar")}</h2></div><button type="button" className="icon-button" onClick={closeForm} aria-label={ui("ปิด", "Close")}><Icon name="close"/></button></div>
       {formError && <p className="household-panel-error" role="alert">{formError}</p>}
       <label className="form-label">{ui("ชื่อรายการ", "Title")}<input required autoFocus value={name} onChange={(event) => setName(event.target.value)}/></label>
       <label className="form-label">{ui("ประเภท", "Type")}<select value={type} onChange={(event) => setType(event.target.value as "appointment" | "contract")} disabled={Boolean(editTarget)}><option value="appointment">{ui("นัดหมาย", "Appointment")}</option><option value="contract">{ui("สัญญา", "Contract")}</option></select></label>
-      <div className="form-row"><label className="form-label">{ui("วันเริ่มต้น", "Start date")}<input type="date" required value={start} onChange={(event) => setStart(event.target.value)}/></label><label className="form-label">{ui("เวลา", "Time")}<input type="time" value={time} onChange={(event) => setTime(event.target.value)}/></label></div>
+      <div className="form-row"><label className="form-label">{ui("วันเริ่มต้น", "Start date")}<input type="date" required value={start} onChange={(event) => { const next = event.target.value; if (repeatWeekdays.length === 1 && repeatWeekdays[0] === calendarWeekday(start)) setRepeatWeekdays([calendarWeekday(next)]); setStart(next); }}/></label><label className="form-label">{ui("เวลา", "Time")}<input type="time" value={time} onChange={(event) => setTime(event.target.value)}/></label></div>
       {type === "contract" && <><div className="form-row"><label className="form-label">{ui("ระยะเวลา", "Duration")}<input type="number" min="1" value={duration} onChange={(event) => setDuration(event.target.value)}/></label><label className="form-label">{ui("หน่วย", "Unit")}<select value={durationUnit} onChange={(event) => setDurationUnit(event.target.value as "days" | "months" | "years")}><option value="years">{ui("ปี", "Years")}</option><option value="months">{ui("เดือน", "Months")}</option><option value="days">{ui("วัน", "Days")}</option></select></label></div><label className="form-label">{ui("วันสิ้นสุด (แก้ไขได้)", "End date (editable)")}<input type="date" value={end || calculatedEnd} onChange={(event) => setEnd(event.target.value)}/></label></>}
       {type === "appointment" && <label className="form-label">{ui("ลิงก์สถานที่ (Location)", "Location link")}<input type="url" inputMode="url" value={locationUrl} onChange={(event) => setLocationUrl(event.target.value)} placeholder="https://maps.google.com/..."/></label>}
+      {type === "appointment" && <section className="calendar-repeat-fields"><label className="form-label">{ui("ทำซ้ำ", "Repeat")}<select value={repeatFrequency} onChange={(event) => setRepeatFrequency(event.target.value as typeof repeatFrequency)}><option value="none">{ui("ไม่ทำซ้ำ", "Does not repeat")}</option><option value="daily">{ui("ทุกวัน", "Daily")}</option><option value="weekly">{ui("ทุกสัปดาห์", "Weekly")}</option><option value="monthly">{ui("ทุกเดือน", "Monthly")}</option><option value="yearly">{ui("ทุกปี", "Yearly")}</option></select></label>
+        {repeatFrequency !== "none" && <><div className="form-row"><label className="form-label">{ui("ทุกกี่", "Every how many")} {repeatFrequency === "daily" ? ui("วัน", "days") : repeatFrequency === "weekly" ? ui("สัปดาห์", "weeks") : repeatFrequency === "monthly" ? ui("เดือน", "months") : ui("ปี", "years")}<input type="number" min="1" max="365" step="1" required value={repeatInterval} onChange={(event) => setRepeatInterval(event.target.value)}/></label><label className="form-label">{ui("สิ้นสุดการทำซ้ำ (ไม่บังคับ)", "Repeat until (optional)")}<input type="date" min={start} value={repeatUntil} onChange={(event) => setRepeatUntil(event.target.value)}/></label></div>
+          {repeatFrequency === "weekly" && <div className="calendar-repeat-weekdays"><span>{ui("วันที่ทำซ้ำ", "Repeat on")}</span><div>{[6, 0, 1, 2, 3, 4, 5].map((day) => <button key={day} type="button" aria-pressed={repeatWeekdays.includes(day)} className={repeatWeekdays.includes(day) ? "selected" : ""} onClick={() => setRepeatWeekdays((current) => current.includes(day) ? current.filter((value) => value !== day) : [...current, day])}>{(language === "en" ? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] : ["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา"])[day]}</button>)}</div></div>}
+          {repeatFrequency === "monthly" && <label className="form-label">{ui("วันที่ของทุกเดือน", "Day of each month")}<select value={repeatMonthlyDay} onChange={(event) => setRepeatMonthlyDay(event.target.value)}><option value="start">{ui(`ตรงกับวันเริ่มต้น (วันที่ ${Number(start.slice(8, 10)) || 1})`, `Same as start date (day ${Number(start.slice(8, 10)) || 1})`)}</option>{Array.from({ length: 31 }, (_, index) => <option key={index + 1} value={index + 1}>{ui("วันที่", "Day")} {index + 1}</option>)}<option value="last">{ui("วันสุดท้ายของเดือน", "Last day of month")}</option></select><small>{ui("เดือนที่ไม่มีวันที่เลือก จะใช้วันสุดท้ายของเดือน", "Shorter months use their last day.")}</small></label>}
+          <p className="calendar-repeat-hint">{ui("หากไม่กำหนดวันสิ้นสุด จะทำซ้ำต่อไปทุกครั้ง และแจ้งเตือนตามรอบที่เลือก", "Without an end date, events and reminders continue on the selected schedule.")}</p></>}
+      </section>}
       <div className="form-row"><label className="form-label">{ui("แจ้งเตือนก่อน", "Remind before")}<select value={remindMinutes} onChange={(event) => setRemindMinutes(event.target.value)}><option value="0">{ui("เมื่อถึงเวลา", "At event time")}</option><option value="15">15 {ui("นาที", "minutes")}</option><option value="60">1 {ui("ชั่วโมง", "hour")}</option><option value="1440">1 {ui("วัน", "day")}</option><option value="4320">3 {ui("วัน", "days")}</option><option value="10080">7 {ui("วัน", "days")}</option></select></label><label className="form-label">{ui("เชื่อมกับรายการ", "Linked record")}<select value={linkedEntryId} onChange={(event) => setLinkedEntryId(event.target.value)}><option value="">{ui("ไม่เชื่อม", "None")}</option>{entries.filter((entry) => entry.kind !== "calendar").map((entry) => <option value={entry.id} key={entry.id}>{entry.name}</option>)}</select></label></div>
       <label className="form-label">{ui("ข้อความแจ้งเตือน", "Reminder text")}<input value={message} onChange={(event) => setMessage(event.target.value)} placeholder={ui("เช่น อย่าลืมเตรียมเอกสาร", "e.g. Bring the documents")}/></label>
       <div className="modal-actions"><button type="button" className="secondary-button" onClick={closeForm}>{ui("ยกเลิก", "Cancel")}</button><button type="submit" className="primary-button">{editTarget ? ui("บันทึกการแก้ไข", "Save changes") : ui("บันทึก", "Save")}</button></div>
     </form></div>}
   </section>;
 }
-function CalendarDetail({ entry, entries, language, onOpenEntry, onEdit, onDelete }: { entry: Entry; entries: Entry[]; language: Language; onOpenEntry: (id: string) => void; onEdit: () => void; onDelete: () => void }) {
+function CalendarDetail({ entry, entries, language, occurrenceDate, onOpenEntry, onEdit, onDelete }: { entry: Entry; entries: Entry[]; language: Language; occurrenceDate: string; onOpenEntry: (id: string) => void; onEdit: () => void; onDelete: () => void }) {
   const calendar = entry.calendar!;
   const ui = (th: string, en: string) => language === "en" ? en : th;
   const linkedEntry = entries.find((item) => item.id === calendar.linkedEntryId);
-  const past = isPastAppointment(entry);
+  const past = isPastOccurrence(entry, occurrenceDate);
   const location = safeLocationUrl(calendar.locationUrl);
   const minutes = calendar.remindMinutes ?? 0;
   const reminder = minutes === 0 ? ui("เมื่อถึงเวลา", "At event time") : minutes % 1440 === 0 ? `${minutes / 1440} ${ui("วันก่อน", "days before")}` : minutes % 60 === 0 ? `${minutes / 60} ${ui("ชั่วโมงก่อน", "hours before")}` : `${minutes} ${ui("นาทีก่อน", "minutes before")}`;
@@ -853,6 +922,7 @@ function CalendarDetail({ entry, entries, language, onOpenEntry, onEdit, onDelet
     <h2>{entry.name}</h2>
     <dl>
       <div><dt>{ui("วันเริ่มต้น", "Start date")}</dt><dd>{dateLabel(calendar.start, language)}</dd></div>
+      {calendar.recurrence && <><div><dt>{ui("วันที่ของครั้งนี้", "This occurrence")}</dt><dd>{dateLabel(occurrenceDate, language)}</dd></div><div><dt>{ui("ทำซ้ำ", "Repeat")}</dt><dd>{recurrenceLabel(calendar.recurrence, language)}</dd></div></>}
       {calendar.end && <div><dt>{ui("วันสิ้นสุด", "End date")}</dt><dd>{dateLabel(calendar.end, language)}</dd></div>}
       <div><dt>{ui("เวลา", "Time")}</dt><dd>{calendar.time || ui("ไม่ระบุ", "Not set")}</dd></div>
       <div><dt>{ui("แจ้งเตือนก่อน", "Reminder")}</dt><dd>{reminder}</dd></div>
@@ -863,7 +933,7 @@ function CalendarDetail({ entry, entries, language, onOpenEntry, onEdit, onDelet
     <div className="calendar-detail-actions">
       {linkedEntry && <button type="button" className="secondary-button" onClick={() => onOpenEntry(linkedEntry.id)}>{ui("ดูรายการที่เกี่ยวข้อง", "View linked record")}</button>}
       {calendar.type === "appointment" && !past && <button type="button" className="secondary-button" onClick={onEdit}><Icon name="edit" size={16}/> {ui("แก้ไขนัดหมาย", "Edit appointment")}</button>}
-      <button type="button" className="danger-button" onClick={onDelete}><Icon name="trash" size={16}/> {ui("ลบรายการ", "Delete event")}</button>
+      <button type="button" className="danger-button" onClick={onDelete}><Icon name="trash" size={16}/> {calendar.recurrence ? ui("ลบนัดหมาย", "Delete occurrence") : ui("ลบรายการ", "Delete event")}</button>
     </div>
   </section>;
 }
