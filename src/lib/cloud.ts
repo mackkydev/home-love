@@ -100,6 +100,7 @@ export async function replaceProfilePhoto(userId: string, photo: Blob): Promise<
 
 export type CloudCategory = { name: string; icon: string; color: string };
 export type Household = { id: string; name: string; role: "owner" | "admin" | "member" };
+export type HouseholdPerson = { user_id: string; email: string; display_name: string; role: Household["role"]; joined_at: string };
 export type CloudEntry = {
   id: string;
   photos?: string[];
@@ -231,6 +232,19 @@ export async function listHouseholds(): Promise<Household[]> {
     name: house.name,
     role: memberships.find((item) => item.household_id === house.id)!.role as Household["role"],
   })).sort((a, b) => Number(b.id === defaultId) - Number(a.id === defaultId));
+}
+
+export async function listHouseholdPeople(householdId: string): Promise<HouseholdPerson[]> {
+  if (!cloud) throw new Error("Supabase is not configured");
+  const { data, error } = await cloud.rpc("list_household_people", { target_household: householdId });
+  if (error) throw error;
+  return (data ?? []) as HouseholdPerson[];
+}
+
+export async function manageHouseholdPerson(householdId: string, userId: string, role: "admin" | "member" | "remove"): Promise<void> {
+  if (!cloud) throw new Error("Supabase is not configured");
+  const { error } = await cloud.rpc("manage_household_person", { target_household: householdId, target_user: userId, next_role: role === "remove" ? null : role, remove_person: role === "remove" });
+  if (error) throw error;
 }
 
 export async function createHouseholdInvite(householdId: string): Promise<string> {

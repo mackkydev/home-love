@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { cloud, cloudEnabled, createHouseholdInvite, createPortableBackup, getProfilePhotoUrl, isAppAdmin, joinHousehold, listHouseholds, openHousehold, renameHousehold, saveHousehold, type CloudSnapshot, type Household } from "@/lib/cloud";
+import { cloud, cloudEnabled, createHouseholdInvite, createPortableBackup, getProfilePhotoUrl, isAppAdmin, joinHousehold, listHouseholdPeople, listHouseholds, openHousehold, renameHousehold, saveHousehold, type CloudSnapshot, type Household, type HouseholdPerson } from "@/lib/cloud";
 import CloudAuth from "./CloudAuth";
 import SettingsPage from "./SettingsPage";
 import AdminPanel from "./AdminPanel";
@@ -18,7 +18,7 @@ type Payment = { paidAt: string; startAt: string; amount: number; quantity: numb
 type ServiceAutoUse = { amount: number; everyDays: number; anchorDate: string; baseRemaining: number };
 type Attachment = { name: string; data: string; type: string };
 type Purchase = { id: string; date: string; store: string; price: number; quantity: number };
-type CalendarInfo = { type: "appointment" | "contract"; start: string; end?: string; time: string; remindMinutes: number; message: string; linkedEntryId?: string; locationUrl?: string; recurrence?: CalendarRecurrence };
+type CalendarInfo = { type: "appointment" | "contract"; start: string; end?: string; time: string; remindMinutes: number; message: string; linkedEntryId?: string; locationUrl?: string; recipientIds?: string[]; recurrence?: CalendarRecurrence };
 type InAppAlert = { key: string; entryId: string; occurrenceDate?: string; kind: "stock" | "medicine" | "appointment" | "contract"; title: string; body: string; occurredAt: number };
 type Entry = {
   id: string;
@@ -49,7 +49,7 @@ type Entry = {
   purchases?: Purchase[];
   calendar?: CalendarInfo;
 };
-type MedicineInstructions = { meals: string[]; foodTiming: string; frequencyHours: string; dose: string; doseUnit: string; details: string; reminders?: { meal: string; time: string; message: string }[] };
+type MedicineInstructions = { meals: string[]; foodTiming: string; frequencyHours: string; dose: string; doseUnit: string; details: string; reminders?: { meal: string; time: string; message: string }[]; recipientIds?: string[] };
 type StockInfo = { quantity: number; dailyUse: number; unit: string; alertDays: number; autoDeduct?: boolean; updatedAt?: string; events?: { at: string; amount: number; actor: string }[] };
 
 function isPastAppointment(entry: Entry): boolean {
@@ -86,7 +86,7 @@ function safeLocationUrl(value?: string): string | null {
   catch { return null; }
 }
 
-function scheduledAlerts(entries: Entry[], nowMs: number, language: Language): InAppAlert[] {
+function scheduledAlerts(entries: Entry[], nowMs: number, language: Language, userId: string): InAppAlert[] {
   if (!nowMs) return [];
   const now = new Date(nowMs);
   const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -95,6 +95,7 @@ function scheduledAlerts(entries: Entry[], nowMs: number, language: Language): I
   const result: InAppAlert[] = [];
   for (const entry of entries) {
     for (const reminder of entry.medicine?.reminders ?? []) {
+      if (entry.medicine?.recipientIds && !entry.medicine.recipientIds.includes(userId)) continue;
       if (!/^\d{2}:\d{2}$/.test(reminder.time)) continue;
       for (let offset = -14; offset <= 0; offset += 1) {
         const date = dateAt(offset);
@@ -105,6 +106,7 @@ function scheduledAlerts(entries: Entry[], nowMs: number, language: Language): I
     }
     if (entry.kind !== "calendar" || !entry.calendar) continue;
     const event = entry.calendar;
+    if (event.recipientIds && !event.recipientIds.includes(userId)) continue;
     const dates = event.type === "contract" ? [event.end || event.start] : calendarOccurrenceDates(event, dateAt(-14), dateAt(7));
     for (const date of dates) {
       const occurredAt = new Date(`${date}T${event.time || "09:00"}:00`).getTime() - Math.max(0, event.remindMinutes || 0) * 60_000;
@@ -251,6 +253,10 @@ export default function Home() {
   const [endingSoon, setEndingSoon] = useState(false);
   const [notice, setNotice] = useState("");
   const [form, setForm] = useState({ name: "", category: "ของใช้ในบ้าน", transaction: "expense" as "income" | "expense", price: "", purchaseQuantity: "1", total: "", unit: "ครั้ง", note: "", store: "", forPerson: "", paidDate: "", startDate: "", medMeals: [] as string[], medFoodTiming: "", medFrequencyHours: "", medDose: "", medDoseUnit: "เม็ด", medDetails: "", medReminders: [] as NonNullable<MedicineInstructions["reminders"]>, useReminders: false, photos: [] as string[], attachments: [] as Attachment[], trackStock: false, stockQuantity: "", stockDailyUse: "", stockUnit: "เม็ด", stockAutoDeduct: false, alertDays: "3", serviceAutoDeduct: false, serviceAutoAmount: "1", serviceAutoEveryDays: "1" });
+  const [householdPeople, setHouseholdPeople] = useState<HouseholdPerson[]>([]);
+  const [householdPeopleError, setHouseholdPeopleError] = useState("");
+  const [medicineRecipientMode, setMedicineRecipientMode] = useState<"all" | "selected">("all");
+  const [medicineRecipientIds, setMedicineRecipientIds] = useState<string[]>([]);
   const [showAlerts, setShowAlerts] = useState(false);
   const [notificationNow, setNotificationNow] = useState(0);
   const [readAlertKeys, setReadAlertKeys] = useState<Set<string>>(() => new Set());
@@ -343,6 +349,28 @@ export default function Home() {
     return () => { active = false; data.subscription.unsubscribe(); };
   }, [loadHouseholdData]);
   useEffect(() => {
+    const client = cloud;
+    if (!client || !cloudReady || !householdId) return;
+    const currentHouse = householdId;
+    const currentUser = loadedUser.current;
+    let active = true;
+    let checking = false;
+    const checkMembership = async () => {
+      if (!active || checking || document.visibilityState !== "visible") return;
+      checking = true;
+      try {
+        const { data, error } = await client.from("household_members").select("role").eq("household_id", currentHouse).eq("user_id", currentUser).maybeSingle();
+        if (!error && !data && active && loadedUser.current === currentUser && activeHouseholdRef.current === currentHouse) {
+          setCloudReady(false); cloudSnapshot.current = null; activeHouseholdRef.current = ""; setEntries([]); setHouseholdId("");
+          void loadHouseholdData(undefined, currentUser).catch((cause) => setCloudError(cause instanceof Error ? cause.message : String(cause)));
+        }
+      } finally { checking = false; }
+    };
+    const timer = setInterval(() => { void checkMembership(); }, 45_000);
+    document.addEventListener("visibilitychange", checkMembership);
+    return () => { active = false; clearInterval(timer); document.removeEventListener("visibilitychange", checkMembership); };
+  }, [cloudReady, householdId, loadHouseholdData]);
+  useEffect(() => {
     let wasHidden = false;
     const onVisibility = () => {
       if (document.visibilityState === "hidden") wasHidden = true;
@@ -388,6 +416,12 @@ export default function Home() {
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(""), 2600); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => { setNotificationNow(Date.now()); const timer = setInterval(() => setNotificationNow(Date.now()), 60_000); return () => clearInterval(timer); }, []);
   useEffect(() => {
+    if (!householdId || !cloudReady) { setHouseholdPeople([]); return; }
+    let current = true;
+    listHouseholdPeople(householdId).then((people) => { if (current) { setHouseholdPeople(people); setHouseholdPeopleError(""); } }).catch((cause) => { if (current) { setHouseholdPeople([]); setHouseholdPeopleError(cause instanceof Error ? cause.message : String(cause)); } });
+    return () => { current = false; };
+  }, [householdId, cloudReady]);
+  useEffect(() => {
     let active = true;
     setReadAlertKeys(new Set());
     if (!householdId || !ready) return () => { active = false; };
@@ -429,8 +463,8 @@ export default function Home() {
       body: language === "en" ? `${currency(quantity)} ${entry.stock?.unit ?? ""} left · ${days} days remaining` : `เหลือประมาณ ${currency(quantity)} ${entry.stock?.unit ?? ""} · ${stockRunoutLabel(days, language, stockRunoutDate(entry.stock))}`,
       occurredAt: notificationNow,
     }));
-    return [...stock, ...scheduledAlerts(entries, notificationNow, language)].sort((a, b) => b.occurredAt - a.occurredAt).slice(0, 80);
-  }, [entries, stockAlerts, notificationNow, language]);
+    return [...stock, ...scheduledAlerts(entries, notificationNow, language, loadedUser.current)].sort((a, b) => b.occurredAt - a.occurredAt).slice(0, 80);
+  }, [entries, stockAlerts, notificationNow, language, authStatus]);
   const unreadAlertCount = inAppAlerts.filter((alert) => !readAlertKeys.has(alert.key)).length;
   const enablePush = async () => {
     if (!("Notification" in window) || !("serviceWorker" in navigator) || !cloud) { setNotice(ui("อุปกรณ์นี้ยังไม่รองรับเว็บพุช", "Web Push is unavailable here")); return; }
@@ -490,16 +524,19 @@ export default function Home() {
   };
   const openModal = (kind: "item" | "service" | "note") => {
     setEditingEntry(null);
+    setMedicineRecipientMode("all"); setMedicineRecipientIds([]);
     setForm({ name: "", category: kind === "item" ? (tab === "items" && category !== "ทั้งหมด" && category !== "บริการ" && category !== "บันทึกแจ้งเตือน" ? category : "ของใช้ในบ้าน") : kind === "service" ? "บริการ" : "เอกสาร", transaction: "expense", price: "", purchaseQuantity: "1", total: "", unit: "ครั้ง", note: "", store: "", forPerson: "", paidDate: today(), startDate: today(), medMeals: [], medFoodTiming: "", medFrequencyHours: "", medDose: "", medDoseUnit: "เม็ด", medDetails: "", medReminders: [], useReminders: false, photos: [], attachments: [], trackStock: false, stockQuantity: "", stockDailyUse: "", stockUnit: "เม็ด", stockAutoDeduct: false, alertDays: "3", serviceAutoDeduct: false, serviceAutoAmount: "1", serviceAutoEveryDays: "1" });
     setModal(kind);
   };
   const editEntry = (entry: Entry) => {
     setEditingEntry(entry);
+    setMedicineRecipientMode(entry.medicine?.recipientIds ? "selected" : "all"); setMedicineRecipientIds(entry.medicine?.recipientIds ?? []);
     setForm({ name: entry.name, category: entry.category, transaction: isIncomeEntry(entry) ? "income" : "expense", price: entry.price?.toString() ?? "", purchaseQuantity: "1", total: entry.total?.toString() ?? "", unit: entry.unit ?? "ครั้ง", note: entry.note ?? "", store: entry.store ?? "", forPerson: entry.forPerson ?? "", paidDate: entry.paidDate ?? entry.date, startDate: entry.startDate ?? entry.date, medMeals: entry.medicine?.meals ?? [], medFoodTiming: entry.medicine?.foodTiming ?? "", medFrequencyHours: entry.medicine?.frequencyHours ?? "", medDose: entry.medicine?.dose ?? "", medDoseUnit: entry.medicine?.doseUnit ?? "เม็ด", medDetails: entry.medicine?.details ?? "", medReminders: entry.medicine?.reminders ?? [], useReminders: Boolean(entry.medicine?.reminders?.length), photos: entry.photos ?? (entry.photo ? [entry.photo] : []), attachments: entry.attachments ?? [], trackStock: Boolean(entry.stock), stockQuantity: entry.stock ? stockRemaining(entry.stock).toString() : "", stockDailyUse: entry.stock?.dailyUse.toString() ?? "", stockUnit: entry.stock?.unit ?? "เม็ด", stockAutoDeduct: entry.stock?.autoDeduct !== false, alertDays: entry.stock?.alertDays.toString() ?? "3", serviceAutoDeduct: Boolean(entry.serviceAuto), serviceAutoAmount: entry.serviceAuto?.amount.toString() ?? "1", serviceAutoEveryDays: entry.serviceAuto?.everyDays.toString() ?? "1" });
     setModal("edit");
   };
   const renewService = (entry: Entry) => {
     setEditingEntry(entry);
+    setMedicineRecipientMode("all"); setMedicineRecipientIds([]);
     setForm({ name: entry.name, category: entry.category, transaction: "expense", price: "", purchaseQuantity: "1", total: "", unit: entry.unit ?? "ครั้ง", note: "", store: entry.store ?? "", forPerson: entry.forPerson ?? "", paidDate: today(), startDate: today(), medMeals: [], medFoodTiming: "", medFrequencyHours: "", medDose: "", medDoseUnit: "เม็ด", medDetails: "", medReminders: [], useReminders: false, photos: [], attachments: [], trackStock: false, stockQuantity: "", stockDailyUse: "", stockUnit: "เม็ด", stockAutoDeduct: false, alertDays: "3", serviceAutoDeduct: Boolean(entry.serviceAuto), serviceAutoAmount: entry.serviceAuto?.amount.toString() ?? "1", serviceAutoEveryDays: entry.serviceAuto?.everyDays.toString() ?? "1" });
     setModal("renew");
   };
@@ -512,6 +549,7 @@ export default function Home() {
     event.preventDefault();
     if (!modal || !form.name.trim()) return;
     if (((modal === "item" && form.category !== "บริการ") || (modal === "edit" && editingEntry?.kind === "item")) && form.trackStock && (form.stockQuantity === "" || form.stockDailyUse === "" || Number(form.stockDailyUse) <= 0)) { setNotice("กรุณาระบุจำนวนคงเหลือและจำนวนที่ใช้ต่อวัน"); return; }
+    if ((modal === "item" || (modal === "edit" && editingEntry?.kind === "item")) && form.medReminders.length > 0 && medicineRecipientMode === "selected" && !medicineRecipientIds.some((id) => householdPeople.some((person) => person.user_id === id))) { setNotice(ui("เลือกสมาชิกที่จะรับแจ้งเตือนอย่างน้อย 1 คน", "Select at least one family member to notify.")); return; }
     if (form.serviceAutoDeduct && (modal === "service" || modal === "renew" || (modal === "item" && form.category === "บริการ") || (modal === "edit" && editingEntry?.kind === "service")) && (!Number.isInteger(Number(form.serviceAutoAmount)) || Number(form.serviceAutoAmount) < 1 || !Number.isInteger(Number(form.serviceAutoEveryDays)) || Number(form.serviceAutoEveryDays) < 1)) { setNotice("กรุณาระบุจำนวนที่หักและรอบวันเป็นจำนวนเต็มมากกว่า 0"); return; }
     if (modal === "category") {
       if (categories.some((item) => item.name.toLowerCase() === form.name.trim().toLowerCase()) || extraCategories.some((item) => item.name.toLowerCase() === form.name.trim().toLowerCase())) { setNotice("มีหมวดหมู่นี้แล้ว"); return; }
@@ -527,7 +565,7 @@ export default function Home() {
       if (!editingEntry) return;
       const updated = { ...editingEntry, name: form.name.trim(), category: form.category.trim() || editingEntry.category, transaction: form.category === "การเงิน" ? form.transaction : form.category === "รายรับ" ? "income" as const : "expense" as const, note: form.note.trim() || undefined, attachments: form.attachments };
       if (editingEntry.kind === "item") { updated.store = form.store.trim() || undefined; updated.forPerson = form.forPerson.trim() || undefined; }
-      if (editingEntry.kind === "item") { updated.medicine = (isMedicineEntry(form.category, form.name) || form.useReminders) && hasMedicineInstructions(form) ? medicineFromForm(form) : undefined; updated.photos = form.photos; updated.photo = form.photos[0] || undefined; }
+      if (editingEntry.kind === "item") { updated.medicine = (isMedicineEntry(form.category, form.name) || form.useReminders) && hasMedicineInstructions(form) ? { ...medicineFromForm(form), recipientIds: medicineRecipientMode === "selected" ? medicineRecipientIds.filter((id) => householdPeople.some((person) => person.user_id === id)) : undefined } : undefined; updated.photos = form.photos; updated.photo = form.photos[0] || undefined; }
       if (editingEntry.kind === "item") updated.stock = form.trackStock ? stockFromForm(form, editingEntry.stock?.events) : undefined;
       if (form.price) updated.price = Number(form.price); else delete updated.price;
       if (editingEntry.kind === "service") {
@@ -559,7 +597,7 @@ export default function Home() {
     const newEntry: Entry = { id: crypto.randomUUID(), name: form.name.trim(), category: form.category.trim() || "อื่น ๆ", kind: entryKind, transaction: form.category === "การเงิน" ? form.transaction : form.category === "รายรับ" ? "income" : "expense", date: entryKind === "service" ? (form.startDate || today()) : today(), actor: "คุณ", note: form.note.trim() || undefined, attachments: form.attachments };
     if (modal === "item") { newEntry.store = form.store.trim() || undefined; newEntry.forPerson = form.forPerson.trim() || undefined; newEntry.photos = form.photos; newEntry.photo = form.photos[0] || undefined; if (form.price && !isIncomeEntry(newEntry)) newEntry.purchases = [{ id: crypto.randomUUID(), date: newEntry.date, store: form.store.trim(), price: Number(form.price), quantity: Math.max(1, Number(form.purchaseQuantity) || 1) }]; }
     if (entryKind === "item" && form.trackStock) newEntry.stock = stockFromForm(form);
-    if (modal === "item" && (isMedicineEntry(form.category, form.name) || form.useReminders) && hasMedicineInstructions(form)) newEntry.medicine = medicineFromForm(form);
+    if (modal === "item" && (isMedicineEntry(form.category, form.name) || form.useReminders) && hasMedicineInstructions(form)) newEntry.medicine = { ...medicineFromForm(form), recipientIds: medicineRecipientMode === "selected" ? medicineRecipientIds.filter((id) => householdPeople.some((person) => person.user_id === id)) : undefined };
     if (modal !== "note" && form.price) newEntry.price = Number(form.price);
     if (entryKind === "service") { const quantity = Number(form.total) || 1; const amount = Number(form.price) || 0; const payment: Payment = { paidAt: form.paidDate || today(), startAt: form.startDate || today(), amount, quantity }; newEntry.total = quantity; newEntry.remaining = quantity; newEntry.unit = form.unit || "ครั้ง"; newEntry.paidDate = payment.paidAt; newEntry.startDate = payment.startAt; newEntry.payments = [payment]; newEntry.events = []; if (form.serviceAutoDeduct) newEntry.serviceAuto = { amount: Number(form.serviceAutoAmount), everyDays: Number(form.serviceAutoEveryDays), anchorDate: payment.startAt, baseRemaining: quantity }; }
     setEntries((prev) => [newEntry, ...prev]); setModal(null); setTab(entryKind === "service" ? "services" : "items"); setNotice("เพิ่มรายการเรียบร้อยแล้ว");
@@ -763,7 +801,7 @@ export default function Home() {
         {tab === "settings" ? <SettingsPage houses={households} activeId={householdId} defaultHouseholdId={defaultHouseholdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} displaySettings={displaySettings} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onMakeDefault={(id) => void makeDefaultHousehold(id)} onRename={(id, name) => renameCurrentHousehold(id, name)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => void signOut()}/> : <>
         <section className="welcome-row"><div><div className="eyebrow"><span className="eyebrow-dot"/> {headerDate}</div><h1>{tab === "home" ? <>{copy.hello} <span>✳</span></> : (navItems.find((item) => item.id === tab)?.label ?? (tab === "calendar" ? ui("บันทึกแจ้งเตือน", "Calendar") : copy.history))}</h1><p>{tab === "home" ? copy.intro : language === "en" ? "Manage and search home information in one place." : "จัดการและค้นหาข้อมูลของบ้านได้ในที่เดียว"}</p></div><button className="primary-button desktop-add" onClick={() => openModal(tab === "services" ? "service" : tab === "items" && category === "เอกสาร" ? "note" : "item")}><span>＋</span> {copy.add}</button></section>
 
-        {tab === "calendar" ? <CalendarPage entries={entries} language={language} editTarget={calendarEditTarget} onEditDone={() => setCalendarEditId(null)} onSave={(entry) => setEntries((previous) => [entry, ...previous])} onUpdate={(updated) => setEntries((previous) => previous.map((entry) => entry.id === updated.id ? updated : entry))} onDelete={removeCalendarOccurrence} onDeletePast={() => setDeletePastAppointmentsOpen(true)} onOpenEntry={openDetail}/> : tab === "home" ? <>
+        {tab === "calendar" ? <CalendarPage entries={entries} language={language} householdId={householdId} editTarget={calendarEditTarget} onEditDone={() => setCalendarEditId(null)} onSave={(entry) => setEntries((previous) => [entry, ...previous])} onUpdate={(updated) => setEntries((previous) => previous.map((entry) => entry.id === updated.id ? updated : entry))} onDelete={removeCalendarOccurrence} onDeletePast={() => setDeletePastAppointmentsOpen(true)} onOpenEntry={openDetail}/> : tab === "home" ? <>
           <section className="summary-grid">
             <article className="summary-card blue-summary"><div className="summary-top"><span>{ui("ค่าใช้จ่ายเดือนนี้", "This month's expenses")}</span><span className="summary-icon"><Icon name="wallet" size={19}/></span></div><strong className="summary-number">฿{currency(spent)}</strong><div className="summary-foot"><span className="summary-trend">↗</span> {ui("รวมรายการซื้อในเดือนนี้", "All purchases this month")}</div><div className="summary-decoration"/></article>
             <article className="summary-card income-summary"><div className="summary-top"><span>{ui("รายรับเดือนนี้", "This month's income")}</span><span className="summary-icon income-icon"><Icon name="wallet" size={19}/></span></div><strong className="summary-number">฿{currency(income)}</strong><div className="summary-foot">{ui("รวมเงินเข้าของครัวเรือน", "All household income")}</div><div className="mini-bars"><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/></div></article>
@@ -806,6 +844,7 @@ export default function Home() {
           <div className="form-row"><label className="form-label">สัมพันธ์กับอาหาร<select value={form.medFoodTiming} onChange={(event) => setForm({ ...form, medFoodTiming: event.target.value })}><option value="">ไม่ระบุ</option><option>ก่อนอาหาร</option><option>หลังอาหาร</option><option>พร้อมอาหาร</option><option>ไม่เกี่ยวกับอาหาร</option></select></label><label className="form-label">รับประทานทุก ๆ <span className="optional">ไม่บังคับ</span><div className="input-with-unit"><input type="number" min="1" placeholder="เช่น 8" value={form.medFrequencyHours} onChange={(event) => setForm({ ...form, medFrequencyHours: event.target.value })}/><span>ชั่วโมง</span></div></label></div>
           <div className="form-row"><label className="form-label">ครั้งละเท่าไร<input type="number" min="0" step="any" placeholder="เช่น 1" value={form.medDose} onChange={(event) => setForm({ ...form, medDose: event.target.value })}/></label><div className="form-label">หน่วย<CategorySelect value={form.medDoseUnit} options={["เม็ด", "แคปซูล", "ช้อนชา", "ช้อนโต๊ะ", "มิลลิลิตร", "หยด", "ซอง", "ครั้ง", "อื่น ๆ"]} allowCreate placeholder="ค้นหาหรือเพิ่มหน่วย" onChange={(value) => setForm({ ...form, medDoseUnit: value })}/></div></div>
           <label className="form-label">รายละเอียดเพิ่มเติม <span className="optional">ไม่บังคับ</span><textarea rows={2} placeholder="เช่น ดื่มน้ำตาม 1 แก้ว หรือคำแนะนำจากฉลากยา" value={form.medDetails} onChange={(event) => setForm({ ...form, medDetails: event.target.value })}/></label>
+          {form.medReminders.length > 0 && <section className="calendar-recipient-fields"><strong>{ui("ผู้รับแจ้งเตือนยารายการนี้", "Medicine reminder recipients")}</strong><div className="calendar-recipient-modes"><button type="button" className={medicineRecipientMode === "all" ? "selected" : ""} aria-pressed={medicineRecipientMode === "all"} onClick={() => setMedicineRecipientMode("all")}>{ui("ทุกคนในบ้าน", "Everyone at home")}</button><button type="button" className={medicineRecipientMode === "selected" ? "selected" : ""} aria-pressed={medicineRecipientMode === "selected"} onClick={() => setMedicineRecipientMode("selected")}>{ui("เลือกเป็นรายคน", "Choose people")}</button></div>{medicineRecipientMode === "selected" && <div className="calendar-recipient-list">{householdPeople.map((person) => <label key={person.user_id}><input type="checkbox" checked={medicineRecipientIds.includes(person.user_id)} onChange={(event) => setMedicineRecipientIds((current) => event.target.checked ? [...current, person.user_id] : current.filter((id) => id !== person.user_id))}/><span><strong>{person.display_name || person.email}</strong><small>{person.email}</small></span></label>)}{householdPeopleError && <p role="alert">{householdPeopleError}</p>}{!householdPeople.length && !householdPeopleError && <p>{ui("กำลังโหลดสมาชิก...", "Loading members...")}</p>}</div>}</section>}
           <section className="medicine-reminder-fields"><div className="medicine-form-heading"><span className="medicine-form-icon"><Icon name="bell" size={16}/></span><div><strong>{ui("เวลาแจ้งเตือน", "Reminder times")}</strong><small>{ui("ตั้งเวลาและข้อความสำหรับแต่ละมื้อ", "Set a time and message for each meal")}</small></div></div>{form.medMeals.map((meal) => { const reminder = form.medReminders.find((item) => item.meal === meal); const defaultTime = ({ "เช้า": "08:00", "กลางวัน": "12:00", "เย็น": "18:00", "ก่อนนอน": "21:00" } as Record<string, string>)[meal] ?? "08:00"; return <div className="reminder-meal-row" key={meal}><label className="stock-toggle"><input type="checkbox" checked={Boolean(reminder)} onChange={(event) => setForm((current) => ({ ...current, medReminders: event.target.checked ? [...current.medReminders, { meal, time: defaultTime, message: "" }] : current.medReminders.filter((item) => item.meal !== meal) }))}/><span>{meal}</span></label>{reminder && <div className="form-row"><label className="form-label">{ui("เวลา", "Time")}<input type="time" value={reminder.time} onChange={(event) => setForm((current) => ({ ...current, medReminders: current.medReminders.map((item) => item.meal === meal ? { ...item, time: event.target.value } : item) }))}/></label><label className="form-label">{ui("ข้อความแจ้งเตือน", "Reminder text")}<input placeholder={ui(`ได้เวลากิน ${form.name || "ยา"}`, `Time for ${form.name || "medicine"}`)} value={reminder.message} onChange={(event) => setForm((current) => ({ ...current, medReminders: current.medReminders.map((item) => item.meal === meal ? { ...item, message: event.target.value } : item) }))}/></label></div>}</div>; })}</section>
         </section>}
         {((modal === "item" && form.category !== "บริการ") || (modal === "edit" && editingEntry?.kind === "item")) && <section className="stock-form-section">
@@ -832,8 +871,8 @@ export default function Home() {
   </main>;
 }
 
-function CalendarPage({ entries, language, editTarget, onEditDone, onSave, onUpdate, onDelete, onDeletePast, onOpenEntry }: {
-  entries: Entry[]; language: Language; editTarget?: Entry; onEditDone: () => void;
+function CalendarPage({ entries, language, householdId, editTarget, onEditDone, onSave, onUpdate, onDelete, onDeletePast, onOpenEntry }: {
+  entries: Entry[]; language: Language; householdId: string; editTarget?: Entry; onEditDone: () => void;
   onSave: (entry: Entry) => void; onUpdate: (entry: Entry) => void;
   onDelete: (entry: Entry, occurrenceDate: string) => void; onDeletePast: () => void; onOpenEntry: (id: string, occurrenceDate?: string) => void;
 }) {
@@ -858,6 +897,17 @@ function CalendarPage({ entries, language, editTarget, onEditDone, onSave, onUpd
   const [repeatMonthlyDay, setRepeatMonthlyDay] = useState("start");
   const [repeatUntil, setRepeatUntil] = useState("");
   const [formError, setFormError] = useState("");
+  const [people, setPeople] = useState<HouseholdPerson[]>([]);
+  const [peopleError, setPeopleError] = useState("");
+  const [recipientMode, setRecipientMode] = useState<"all" | "selected">("all");
+  const [recipientIds, setRecipientIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!householdId) { setPeople([]); return; }
+    let current = true;
+    listHouseholdPeople(householdId).then((items) => { if (current) { setPeople(items); setPeopleError(""); } }).catch((cause) => { if (current) { setPeople([]); setPeopleError(cause instanceof Error ? cause.message : String(cause)); } });
+    return () => { current = false; };
+  }, [householdId]);
 
   useEffect(() => {
     if (!editTarget?.calendar) return;
@@ -876,6 +926,8 @@ function CalendarPage({ entries, language, editTarget, onEditDone, onSave, onUpd
     setRepeatWeekdays(calendar.recurrence?.weekdays ?? [calendarWeekday(calendar.start)]);
     setRepeatMonthlyDay(String(calendar.recurrence?.monthlyDay ?? "start"));
     setRepeatUntil(calendar.recurrence?.until ?? "");
+    setRecipientMode(calendar.recipientIds ? "selected" : "all");
+    setRecipientIds(calendar.recipientIds ?? []);
     setFormError("");
     setShowForm(true);
   }, [editTarget?.id]);
@@ -900,7 +952,7 @@ function CalendarPage({ entries, language, editTarget, onEditDone, onSave, onUpd
     onEditDone();
     setName(""); setType("appointment"); setStart(selected); setEnd(""); setDuration("1");
     setDurationUnit("years"); setTime("09:00"); setRemindMinutes("60");
-    setMessage(""); setLinkedEntryId(""); setLocationUrl(""); setRepeatFrequency("none"); setRepeatInterval("1"); setRepeatWeekdays([calendarWeekday(selected)]); setRepeatMonthlyDay("start"); setRepeatUntil(""); setFormError(""); setShowForm(true);
+    setMessage(""); setLinkedEntryId(""); setLocationUrl(""); setRepeatFrequency("none"); setRepeatInterval("1"); setRepeatWeekdays([calendarWeekday(selected)]); setRepeatMonthlyDay("start"); setRepeatUntil(""); setRecipientMode("all"); setRecipientIds([]); setFormError(""); setShowForm(true);
   };
   const save = (event: React.FormEvent) => {
     event.preventDefault();
@@ -919,11 +971,13 @@ function CalendarPage({ entries, language, editTarget, onEditDone, onSave, onUpd
       setFormError(ui("กรุณาใส่ลิงก์สถานที่ที่ขึ้นต้นด้วย https:// หรือ http://", "Enter a location link starting with https:// or http://"));
       return;
     }
+    if (recipientMode === "selected" && !recipientIds.some((id) => people.some((person) => person.user_id === id))) { setFormError(ui("เลือกสมาชิกที่จะรับแจ้งเตือนอย่างน้อย 1 คน", "Select at least one family member to notify.")); return; }
     const calendar: CalendarInfo = {
       type, start, end: type === "contract" ? (end || calculatedEnd) : undefined,
       time, remindMinutes: Number(remindMinutes), message: message.trim(),
       linkedEntryId: linkedEntryId || undefined,
       locationUrl: location ? safeLocationUrl(location)! : undefined,
+      recipientIds: recipientMode === "selected" ? recipientIds.filter((id) => people.some((person) => person.user_id === id)) : undefined,
       recurrence: type === "appointment" && repeatFrequency !== "none" ? {
         frequency: repeatFrequency, interval,
         weekdays: repeatFrequency === "weekly" ? [...repeatWeekdays].sort((a, b) => a - b) : undefined,
@@ -974,6 +1028,7 @@ function CalendarPage({ entries, language, editTarget, onEditDone, onSave, onUpd
           {repeatFrequency === "monthly" && <label className="form-label">{ui("วันที่ของทุกเดือน", "Day of each month")}<select value={repeatMonthlyDay} onChange={(event) => setRepeatMonthlyDay(event.target.value)}><option value="start">{ui(`ตรงกับวันเริ่มต้น (วันที่ ${Number(start.slice(8, 10)) || 1})`, `Same as start date (day ${Number(start.slice(8, 10)) || 1})`)}</option>{Array.from({ length: 31 }, (_, index) => <option key={index + 1} value={index + 1}>{ui("วันที่", "Day")} {index + 1}</option>)}<option value="last">{ui("วันสุดท้ายของเดือน", "Last day of month")}</option></select><small>{ui("เดือนที่ไม่มีวันที่เลือก จะใช้วันสุดท้ายของเดือน", "Shorter months use their last day.")}</small></label>}
           <p className="calendar-repeat-hint">{ui("หากไม่กำหนดวันสิ้นสุด จะทำซ้ำต่อไปทุกครั้ง และแจ้งเตือนตามรอบที่เลือก", "Without an end date, events and reminders continue on the selected schedule.")}</p></>}
       </section>}
+      <section className="calendar-recipient-fields"><strong>{ui("ส่งแจ้งเตือนถึง", "Notify")}</strong><div className="calendar-recipient-modes"><button type="button" className={recipientMode === "all" ? "selected" : ""} aria-pressed={recipientMode === "all"} onClick={() => setRecipientMode("all")}>{ui("ทุกคนในบ้าน", "Everyone at home")}</button><button type="button" className={recipientMode === "selected" ? "selected" : ""} aria-pressed={recipientMode === "selected"} onClick={() => setRecipientMode("selected")}>{ui("เลือกเป็นรายคน", "Choose people")}</button></div>{recipientMode === "selected" && <div className="calendar-recipient-list">{people.map((person) => <label key={person.user_id}><input type="checkbox" checked={recipientIds.includes(person.user_id)} onChange={(event) => setRecipientIds((current) => event.target.checked ? [...current, person.user_id] : current.filter((id) => id !== person.user_id))}/><span><strong>{person.display_name || person.email}</strong><small>{person.email}</small></span></label>)}{peopleError && <p role="alert">{peopleError}</p>}{!people.length && !peopleError && <p>{ui("กำลังโหลดสมาชิก...", "Loading members...")}</p>}</div>}</section>
       <div className="form-row"><label className="form-label">{ui("แจ้งเตือนก่อน", "Remind before")}<select value={remindMinutes} onChange={(event) => setRemindMinutes(event.target.value)}><option value="0">{ui("เมื่อถึงเวลา", "At event time")}</option><option value="15">15 {ui("นาที", "minutes")}</option><option value="60">1 {ui("ชั่วโมง", "hour")}</option><option value="1440">1 {ui("วัน", "day")}</option><option value="4320">3 {ui("วัน", "days")}</option><option value="10080">7 {ui("วัน", "days")}</option></select></label><label className="form-label">{ui("เชื่อมกับรายการ", "Linked record")}<select value={linkedEntryId} onChange={(event) => setLinkedEntryId(event.target.value)}><option value="">{ui("ไม่เชื่อม", "None")}</option>{entries.filter((entry) => entry.kind !== "calendar").map((entry) => <option value={entry.id} key={entry.id}>{entry.name}</option>)}</select></label></div>
       <label className="form-label">{ui("ข้อความแจ้งเตือน", "Reminder text")}<input value={message} onChange={(event) => setMessage(event.target.value)} placeholder={ui("เช่น อย่าลืมเตรียมเอกสาร", "e.g. Bring the documents")}/></label>
       <div className="modal-actions"><button type="button" className="secondary-button" onClick={closeForm}>{ui("ยกเลิก", "Cancel")}</button><button type="submit" className="primary-button">{editTarget ? ui("บันทึกการแก้ไข", "Save changes") : ui("บันทึก", "Save")}</button></div>
@@ -998,6 +1053,7 @@ function CalendarDetail({ entry, entries, language, occurrenceDate, onOpenEntry,
       {calendar.end && <div><dt>{ui("วันสิ้นสุด", "End date")}</dt><dd>{dateLabel(calendar.end, language)}</dd></div>}
       <div><dt>{ui("เวลา", "Time")}</dt><dd>{calendar.time || ui("ไม่ระบุ", "Not set")}</dd></div>
       <div><dt>{ui("แจ้งเตือนก่อน", "Reminder")}</dt><dd>{reminder}</dd></div>
+      <div><dt>{ui("ผู้รับแจ้งเตือน", "Recipients")}</dt><dd>{calendar.recipientIds ? ui(`${calendar.recipientIds.length} คนที่เลือก`, `${calendar.recipientIds.length} selected people`) : ui("ทุกคนในบ้าน", "Everyone at home")}</dd></div>
       {calendar.message && <div><dt>{ui("ข้อความแจ้งเตือน", "Reminder text")}</dt><dd>{calendar.message}</dd></div>}
       {location && <div><dt>{ui("สถานที่", "Location")}</dt><dd><a href={location} target="_blank" rel="noopener noreferrer">{ui("เปิดลิงก์สถานที่ ↗", "Open location link ↗")}</a></dd></div>}
       {linkedEntry && <div><dt>{ui("รายการที่เกี่ยวข้อง", "Linked record")}</dt><dd>{linkedEntry.name}</dd></div>}

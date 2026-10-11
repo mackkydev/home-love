@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
-import { cloud, hasDevicePin, replaceProfilePhoto, setDevicePin, verifyDevicePin, type Household } from "@/lib/cloud";
+import { createPortal } from "react-dom";
+import { cloud, hasDevicePin, listHouseholdPeople, manageHouseholdPerson, replaceProfilePhoto, setDevicePin, verifyDevicePin, type Household, type HouseholdPerson } from "@/lib/cloud";
 import UsagePage from "./UsagePage";
 
 type Section = "menu" | "account" | "home" | "pin" | "display" | "usage";
@@ -75,9 +76,40 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
   const [confirmPin, setConfirmPin] = useState("");
   const [pinBusy, setPinBusy] = useState(false);
   const [pinMessage, setPinMessage] = useState("");
+  const [people, setPeople] = useState<HouseholdPerson[]>([]);
+  const [peopleBusy, setPeopleBusy] = useState(false);
+  const [peopleError, setPeopleError] = useState("");
+  const [peopleRevision, setPeopleRevision] = useState(0);
+  const [pendingMemberAction, setPendingMemberAction] = useState<{ person: HouseholdPerson; role: "admin" | "member" | "remove" } | null>(null);
   const pinKey = `baanjai-pin-device-${userId}`;
   const active = houses.find((house) => house.id === activeId);
   const canInvite = active?.role === "owner" || active?.role === "admin";
+
+  useEffect(() => { setPeople([]); }, [activeId]);
+  useEffect(() => {
+    if (section !== "home") return;
+    const timer = setInterval(() => setPeopleRevision((revision) => revision + 1), 45_000);
+    return () => clearInterval(timer);
+  }, [section]);
+
+  useEffect(() => {
+    if (section !== "home" || !activeId || !userId) return;
+    let current = true;
+    setPeopleBusy(true);
+    listHouseholdPeople(activeId).then((items) => { if (current) { setPeople(items); setPeopleError(""); } }).catch((cause) => { if (current) { setPeople([]); setPeopleError(cause instanceof Error ? cause.message : String(cause)); } }).finally(() => { if (current) setPeopleBusy(false); });
+    return () => { current = false; };
+  }, [section, activeId, userId, houses.length, peopleRevision]);
+
+  const confirmMemberAction = async () => {
+    if (!pendingMemberAction) return;
+    setPeopleBusy(true);
+    try {
+      await manageHouseholdPerson(activeId, pendingMemberAction.person.user_id, pendingMemberAction.role);
+      setPeopleRevision((revision) => revision + 1);
+      setPeopleError("");
+    } catch (cause) { setPeopleError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setPendingMemberAction(null); setPeopleBusy(false); }
+  };
 
 
   useEffect(() => {
@@ -195,11 +227,17 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
           </div>;
         })}</div>
       </section>
+      <section className="settings-card"><div className="household-people-heading"><div><h2>{en ? "Family members" : "สมาชิกในบ้าน"}</h2><p>{active?.name}</p></div><button type="button" className="secondary-button" disabled={peopleBusy} onClick={() => setPeopleRevision((revision) => revision + 1)}>{en ? "Refresh" : "รีเฟรช"}</button></div>
+        {peopleError && <p className="household-panel-error" role="alert">{peopleError}</p>}
+        {peopleBusy && !people.length && <p>{en ? "Loading members..." : "กำลังโหลดสมาชิก..."}</p>}
+        <div className="household-people-list">{people.map((person) => <div className="household-person" key={person.user_id}><span className="household-person-avatar">{(person.display_name || person.email || "?").slice(0, 1).toUpperCase()}</span><div className="household-person-copy"><strong>{person.display_name || person.email}</strong><small>{person.email}{person.user_id === userId ? (en ? " · You" : " · คุณ") : ""}</small></div><span className="household-person-role">{person.role === "owner" ? (en ? "Owner" : "เจ้าบ้าน") : person.role === "admin" ? (en ? "Admin" : "ผู้ดูแล") : (en ? "Member" : "สมาชิก")}</span>{active?.role === "owner" && person.role !== "owner" && person.user_id !== userId && <div className="household-person-actions"><select aria-label={en ? `Role for ${person.display_name}` : `บทบาทของ ${person.display_name}`} value={person.role} disabled={peopleBusy} onChange={(event) => setPendingMemberAction({ person, role: event.target.value as "admin" | "member" })}><option value="member">{en ? "Member" : "สมาชิก"}</option><option value="admin">{en ? "Admin" : "ผู้ดูแล"}</option></select><button type="button" className="household-person-remove" disabled={peopleBusy} onClick={() => setPendingMemberAction({ person, role: "remove" })}>{en ? "Remove" : "นำออก"}</button></div>}</div>)}</div>
+      </section>
       {canInvite && <section className="settings-card"><h2>{en ? "Invite family" : "เชิญเข้าร่วมบ้าน"}</h2><p>{en ? "The single-use code expires in 7 days." : "รหัสใช้ได้ครั้งเดียวและหมดอายุใน 7 วัน"}</p><button type="button" className="primary-button" disabled={busy} onClick={onInvite}>{en ? "Create invite code" : "สร้างรหัสเชิญ"}</button>{inviteCode && <div className="household-invite-code"><code>{inviteCode}</code><button type="button" onClick={() => void navigator.clipboard.writeText(inviteCode).then(() => setCopied(true))}>{copied ? (en ? "Copied" : "คัดลอกแล้ว") : (en ? "Copy" : "คัดลอก")}</button></div>}</section>}
       <section className="settings-card"><h2>{en ? "Join a home" : "เข้าร่วมบ้าน"}</h2><p>{en ? "Enter an invite code shared by the home owner." : "กรอกรหัสเชิญที่เจ้าของบ้านส่งให้"}</p><form className="household-join-form" onSubmit={(event) => { event.preventDefault(); onJoin(code); }}><input required value={code} onChange={(event) => setCode(event.target.value)} placeholder={en ? "Invite code" : "รหัสเชิญ"} autoCapitalize="none" autoComplete="off"/><button type="submit" className="primary-button" disabled={busy || !code.trim()}>{busy ? (en ? "Please wait..." : "กรุณารอสักครู่...") : (en ? "Join" : "เข้าร่วม")}</button></form></section>
     </div>}
     {section === "pin" && <div className="settings-sections"><section className="settings-card"><h2>{en ? "Ask for PIN when opening the app" : "ถาม PIN เมื่อเปิดแอป"}</h2><p>{en ? "This applies to this signed-in device. Email sign-in remains available." : "ใช้กับเครื่องนี้ที่เข้าสู่ระบบแล้ว ยังเข้าใช้ด้วยอีเมลได้ตามปกติ"}</p><div className="settings-toggle-row"><span>{pinEnabled ? (en ? "On" : "เปิดอยู่") : (en ? "Off" : "ปิดอยู่")}</span><button type="button" className={`settings-switch ${pinEnabled ? "on" : ""}`} role="switch" aria-checked={pinEnabled} aria-label={en ? "Ask for PIN when opening the app" : "ถาม PIN เมื่อเปิดแอป"} disabled={pinBusy || pinExists === null} onClick={() => void togglePin()}><i/></button></div>{pinExists && !pinEnabled && <input className="settings-pin-input" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="off" placeholder={en ? "Current PIN to turn on" : "PIN เดิมเพื่อเปิดใช้งาน"} value={currentPin} onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/>}</section><section className="settings-card"><h2>{pinExists ? (en ? "Change six-digit PIN" : "เปลี่ยน PIN 6 หลัก") : (en ? "Set six-digit PIN" : "ตั้ง PIN 6 หลัก")}</h2><p>{en ? "Choose a code that has not been used by another account." : "เลือกรหัสที่ไม่ซ้ำกับบัญชีอื่น"}</p>{pinExists === null ? <p>{en ? "Loading..." : "กำลังโหลด..."}</p> : <form className="household-password-form" onSubmit={(event) => void savePin(event)}>{!pinExists && <input type="password" minLength={8} required autoComplete="current-password" placeholder={en ? "Account password" : "รหัสผ่านบัญชี"} value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)}/>} {pinExists && <input type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "Current PIN" : "PIN เดิม"} value={currentPin} onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/>}<input type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "New six-digit PIN" : "PIN ใหม่ 6 หลัก"} value={newPin} onChange={(event) => setNewPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/><input type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "Confirm new PIN" : "ยืนยัน PIN ใหม่"} value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/><button type="submit" className="primary-button" disabled={pinBusy}>{pinExists ? (en ? "Change PIN" : "เปลี่ยน PIN") : (en ? "Set PIN" : "ตั้ง PIN")}</button></form>}{pinMessage && <p role="status">{pinMessage}</p>}</section></div>}
     {section === "display" && <div className="settings-sections"><section className="settings-card">{displaySettings}</section></div>}
     {section === "usage" && isAdmin && <UsagePage language={language}/>}
+    {pendingMemberAction && typeof document !== "undefined" && createPortal(<div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPendingMemberAction(null); }}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="member-action-title"><h2 id="member-action-title">{pendingMemberAction.role === "remove" ? (en ? "Remove this member?" : "นำสมาชิกออกจากบ้าน?") : (en ? "Change member role?" : "เปลี่ยนบทบาทสมาชิก?")}</h2><p><strong>{pendingMemberAction.person.display_name || pendingMemberAction.person.email}</strong> · {pendingMemberAction.role === "remove" ? (en ? "They will no longer see this home's data." : "สมาชิกจะเข้าถึงข้อมูลบ้านนี้ไม่ได้อีก") : pendingMemberAction.role === "admin" ? (en ? "Grant home administration access" : "ให้สิทธิ์ผู้ดูแลบ้าน") : (en ? "Set as a regular member" : "เปลี่ยนเป็นสมาชิกทั่วไป")}</p><div className="confirm-actions"><button type="button" className="secondary-button" onClick={() => setPendingMemberAction(null)}>{en ? "Cancel" : "ยกเลิก"}</button><button type="button" className={pendingMemberAction.role === "remove" ? "danger-button" : "primary-button"} disabled={peopleBusy} onClick={() => void confirmMemberAction()}>{en ? "Confirm" : "ยืนยัน"}</button></div></section></div>, document.body)}
   </div>;
 }

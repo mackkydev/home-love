@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
 import { calendarOccurrenceDates, type CalendarRecurrence } from "@/lib/calendar-recurrence";
 
-type ReminderEntry = { id: string; name: string; kind: string; medicine?: { reminders?: { meal: string; time: string; message: string }[] }; calendar?: { type: "appointment" | "contract"; start: string; end?: string; time: string; remindMinutes: number; message: string; recurrence?: CalendarRecurrence } };
+type ReminderEntry = { id: string; name: string; kind: string; medicine?: { reminders?: { meal: string; time: string; message: string }[]; recipientIds?: string[] }; calendar?: { type: "appointment" | "contract"; start: string; end?: string; time: string; remindMinutes: number; message: string; recipientIds?: string[]; recurrence?: CalendarRecurrence } };
 type Due = { key: string; title: string; body: string; url: string };
 
 function dueFor(entry: ReminderEntry, now: Date): Due[] {
@@ -60,6 +60,8 @@ export async function POST(request: Request) {
     const entry = row.data as ReminderEntry;
     for (const reminder of dueFor(entry, now)) {
       for (const userId of usersByHouse.get(row.household_id) ?? []) {
+        if (entry.kind === "item" && entry.medicine?.recipientIds && !entry.medicine.recipientIds.includes(userId)) continue;
+        if (entry.kind === "calendar" && entry.calendar?.recipientIds && !entry.calendar.recipientIds.includes(userId)) continue;
         for (const subscription of subscriptionsByUser.get(userId) ?? []) {
           const { error: claimError } = await db.from("push_deliveries").insert({ occurrence_key: reminder.key, endpoint: subscription.endpoint });
           if (claimError) continue;
