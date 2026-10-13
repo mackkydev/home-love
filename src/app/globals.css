@@ -733,4 +733,17 @@ body{font-size:17px}
 .calendar-recipient-list label{display:flex;align-items:center;gap:10px;padding:9px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
 .calendar-recipient-list input{flex:none;width:19px;height:19px;margin:0;accent-color:var(--blue)}
 .calendar-recipient-list span{min-width:0}.calendar-recipient-list strong,.calendar-recipient-list small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.purchase-history .section-heading{margin-bottom:16px}
+.purchase-history .section-heading>div{min-width:0}
+.purchase-history .section-heading p{margin:4px 0 0;color:var(--muted);font-size:12px}
+.purchase-history-list{display:grid;gap:10px}
+.purchase-history-card{padding:14px 15px;border:1px solid var(--line);border-radius:14px;background:var(--canvas)}
+.purchase-history-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.purchase-history-card-head span{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:13px}
+.purchase-history-card-head strong{color:var(--blue);font-size:17px;white-space:nowrap}
+.purchase-history-card-details{display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,auto);gap:14px;margin-top:11px;padding-top:11px;border-top:1px solid var(--line)}
+.purchase-history-card-details span{display:grid;min-width:0;gap:3px}
+.purchase-history-card-details small{color:var(--muted);font-size:11px}
+.purchase-history-card-details strong{overflow-wrap:anywhere;font-size:13px}
+.purchase-history-empty{margin:0;color:var(--muted);font-size:13px}
 .calendar-recipient-list strong{font-size:13px}.calendar-recipient-list small,.calendar-recipient-list p{color:var(--muted);font-size:12px}
