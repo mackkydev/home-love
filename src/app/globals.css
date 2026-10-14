@@ -294,6 +294,12 @@ html[lang="en"] .portrait-only-message.en{display:block}
 .entry-row.is-expanded{border-radius:15px 15px 0 0;border-bottom-color:transparent}
 .row-icon-button{width:32px;height:32px;display:grid;place-items:center;border:1px solid transparent;border-radius:10px;background:#f5f7fc;transition:background .15s,transform .15s,color .15s}
 .row-icon-button:hover{transform:translateY(-1px)}
+.entry-manage-actions{display:flex;align-items:center;gap:5px;flex:none}
+.detail-page .entry-actions{width:100%;flex-wrap:wrap;gap:10px}
+.detail-page .entry-manage-actions{margin-left:auto;gap:10px}
+.detail-page .entry-manage-actions .row-icon-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;width:auto;min-width:76px;height:44px;padding:0 11px;font-size:13px;font-weight:700}
+.calendar-detail-manage-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px;margin-left:auto}
+.calendar-detail-manage-actions>button{min-height:44px}
 .edit-icon-button{color:#5275e8;background:#eff3ff;border-color:#e4eaff}
 .edit-icon-button:hover{background:#e5ecff}
 .delete-icon-button{color:#e45c6c;background:#fff0f1;border-color:#ffe5e7}
