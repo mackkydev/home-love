@@ -2,22 +2,28 @@ import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
 import { calendarOccurrenceDates, type CalendarRecurrence } from "@/lib/calendar-recurrence";
 
-type ReminderEntry = { id: string; name: string; kind: string; medicine?: { reminders?: { meal: string; time: string; message: string }[]; recipientIds?: string[] }; calendar?: { type: "appointment" | "contract"; start: string; end?: string; time: string; remindMinutes: number; message: string; recipientIds?: string[]; recurrence?: CalendarRecurrence } };
+type ReminderEntry = { id: string; name: string; category?: string; kind: string; medicine?: { reminders?: { meal: string; time: string; message: string }[]; recipientIds?: string[] }; stock?: { quantity: number; dailyUse: number; alertDays: number; unit: string; updatedAt?: string; autoDeduct?: boolean }; shopping?: { dueDate: string; completedAt?: string }; calendar?: { type: "appointment" | "contract"; start: string; end?: string; time: string; remindMinutes: number; message: string; recipientIds?: string[]; recurrence?: CalendarRecurrence } };
 type Due = { key: string; title: string; body: string; url: string };
 
 function dueFor(entry: ReminderEntry, now: Date): Due[] {
   const windowStart = now.getTime() - 5 * 60_000;
   const due: Due[] = [];
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  const bangkokDay = `${part("year")}-${part("month")}-${part("day")}`;
   const add = (key: string, date: string, time: string, minutesBefore: number, title: string, body: string, occurrenceDate?: string) => {
     const timestamp = Date.parse(`${date}T${time || "09:00"}:00+07:00`) - minutesBefore * 60_000;
     if (timestamp <= now.getTime() && timestamp > windowStart) due.push({ key, title, body, url: `/?item=${encodeURIComponent(entry.id)}${occurrenceDate ? `&occurrence=${occurrenceDate}` : ""}` });
   };
   if (entry.kind === "item") {
-    const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
-    const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
-    const bangkokDay = `${part("year")}-${part("month")}-${part("day")}`;
     for (const reminder of entry.medicine?.reminders ?? []) add(`${entry.id}:medicine:${reminder.meal}:${bangkokDay}`, bangkokDay, reminder.time, 0, `ถึงเวลา: ${entry.name}`, reminder.message || `ถึงเวลากิน ${entry.name} (${reminder.meal})`);
+    if (entry.stock && entry.stock.dailyUse > 0) {
+      const elapsed = entry.stock.autoDeduct === false || !entry.stock.updatedAt ? 0 : Math.max(0, Math.floor((Date.parse(`${bangkokDay}T00:00:00Z`) - Date.parse(`${entry.stock.updatedAt}T00:00:00Z`)) / 86400000));
+      const remaining = Math.max(0, entry.stock.quantity - entry.stock.dailyUse * elapsed);
+      if (Math.ceil(remaining / entry.stock.dailyUse) <= entry.stock.alertDays) add(`${entry.id}:stock:${bangkokDay}`, bangkokDay, "09:00", 0, `ใกล้หมด: ${entry.name}`, `เหลือประมาณ ${remaining} ${entry.stock.unit}`);
+    }
   }
+  if (entry.kind === "shopping" && entry.shopping && !entry.shopping.completedAt && entry.shopping.dueDate <= bangkokDay) add(`${entry.id}:shopping:${bangkokDay}`, bangkokDay, "09:00", 0, `ต้องซื้อ: ${entry.name}`, `ถึงวันซื้อ ${entry.name} แล้ว`);
   if (entry.kind === "calendar" && entry.calendar) {
     const event = entry.calendar;
     const minutesBefore = Math.max(0, event.remindMinutes || 0);
@@ -55,12 +61,18 @@ export async function POST(request: Request) {
   const subscriptionsByUser = new Map<string, typeof subscriptions>();
   for (const subscription of subscriptions ?? []) { const list = subscriptionsByUser.get(subscription.user_id) ?? []; list.push(subscription); subscriptionsByUser.set(subscription.user_id, list); }
   const now = new Date();
+  const preferencesByUser = new Map<string, Record<string, boolean>>();
   let sent = 0;
   for (const row of entries ?? []) {
     const entry = row.data as ReminderEntry;
     for (const reminder of dueFor(entry, now)) {
       for (const userId of usersByHouse.get(row.household_id) ?? []) {
-        if (entry.kind === "item" && entry.medicine?.recipientIds && !entry.medicine.recipientIds.includes(userId)) continue;
+        if (!preferencesByUser.has(userId)) {
+          const { data: user } = await db.auth.admin.getUserById(userId);
+          preferencesByUser.set(userId, (user?.user?.user_metadata?.notification_preferences ?? {}) as Record<string, boolean>);
+        }
+        if (entry.category && preferencesByUser.get(userId)?.[entry.category] === false) continue;
+        if (reminder.key.includes(":medicine:") && entry.medicine?.recipientIds && !entry.medicine.recipientIds.includes(userId)) continue;
         if (entry.kind === "calendar" && entry.calendar?.recipientIds && !entry.calendar.recipientIds.includes(userId)) continue;
         for (const subscription of subscriptionsByUser.get(userId) ?? []) {
           const { error: claimError } = await db.from("push_deliveries").insert({ occurrence_key: reminder.key, endpoint: subscription.endpoint });

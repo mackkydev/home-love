@@ -93,6 +93,7 @@ export default function CloudAuth({
     }
   };
 
+  if (checking && !recoveryMode && !cloudError) return <main className="cloud-loading-page" role="status" aria-live="polite"><section className="cloud-loading-panel"><span className="cloud-loading-orbit" aria-hidden="true"/><strong>{en ? "Opening your home" : "กำลังเปิดบ้านของเรา"}</strong><p>{en ? "Loading your household records..." : "กำลังเตรียมข้อมูลของบ้าน..."}</p></section></main>;
   return <main className="cloud-auth-page"><section className="cloud-auth-card">
     <span className="brand-mark" aria-hidden="true">⌂</span>
     <h1>{en ? "Our Home" : "บ้านของเรา"}</h1>
