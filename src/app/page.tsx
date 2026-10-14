@@ -14,6 +14,8 @@ type AppTheme = "light" | "dark" | "system";
 type Accent = "blue" | "violet" | "green" | "rose" | "pink" | "gray" | "gold" | "custom";
 type PaletteMode = "normal" | "pastel";
 type Language = "th" | "en";
+type InstallPlatform = "ios" | "android" | null;
+type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
 type Payment = { paidAt: string; startAt: string; amount: number; quantity: number };
 type ServiceAutoUse = { amount: number; everyDays: number; anchorDate: string; baseRemaining: number };
 type Attachment = { name: string; data: string; type: string };
@@ -283,7 +285,27 @@ export default function Home() {
   const [language, setLanguage] = useState<Language>("th");
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("default");
   const [pushReady, setPushReady] = useState(false);
+  const [installPlatform, setInstallPlatform] = useState<InstallPlatform>(null);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
   useEffect(() => { if (!ready || notificationPermission !== "granted" || !("serviceWorker" in navigator)) return; void navigator.serviceWorker.ready.then((registration) => registration.pushManager.getSubscription()).then((subscription) => setPushReady(Boolean(subscription))).catch(() => undefined); }, [ready, notificationPermission]);
+
+  useEffect(() => {
+    const standalone = window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+    const ios = /iPad|iPhone|iPod/i.test(navigator.userAgent) || navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+    const android = /Android/i.test(navigator.userAgent);
+    const mobileOrTablet = ios || android || navigator.maxTouchPoints > 0 && window.innerWidth <= 1024;
+    if (standalone) { localStorage.setItem("home-love-pwa-installed", "1"); return; }
+    if (localStorage.getItem("home-love-pwa-installed") === "1" || !mobileOrTablet || sessionStorage.getItem("home-love-install-dismissed") === "1") return;
+    setInstallPlatform(ios ? "ios" : android ? "android" : null);
+    setShowInstallBanner(true);
+    const beforeInstall = (event: Event) => { event.preventDefault(); setInstallPrompt(event as BeforeInstallPromptEvent); setShowInstallBanner(true); };
+    const installed = () => { localStorage.setItem("home-love-pwa-installed", "1"); setShowInstallBanner(false); setShowInstallGuide(false); setInstallPrompt(null); };
+    window.addEventListener("beforeinstallprompt", beforeInstall);
+    window.addEventListener("appinstalled", installed);
+    return () => { window.removeEventListener("beforeinstallprompt", beforeInstall); window.removeEventListener("appinstalled", installed); };
+  }, []);
 
   useEffect(() => {
     setTodayValue(today());
@@ -863,6 +885,17 @@ export default function Home() {
   const shoppingPurchaseTotal = Math.max(0, Number(shoppingForm.quantity) || 0) * Math.max(0, Number(shoppingForm.price) || 0);
   const openCategory = (name: string) => { setSearch(""); setEndingSoon(false); setCategory(name); setTab(name === "บันทึกแจ้งเตือน" ? "calendar" : name === "บริการ" ? "services" : "items"); };
   const openTab = (next: Tab) => { setSearch(""); setEndingSoon(false); setCategory(next === "services" ? "บริการ" : "ทั้งหมด"); setTab(next); };
+  const installPwa = async () => {
+    if (installPlatform === "android" && installPrompt) {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      setInstallPrompt(null);
+      if (choice.outcome === "accepted") { localStorage.setItem("home-love-pwa-installed", "1"); setShowInstallBanner(false); }
+      return;
+    }
+    setShowInstallGuide(true);
+  };
+  const dismissInstallBanner = () => { sessionStorage.setItem("home-love-install-dismissed", "1"); setShowInstallBanner(false); setShowInstallGuide(false); };
   const greetingIcon = hour < 11 ? "🌤️" : hour < 16 ? "☀️" : hour < 19 ? "🌇" : "🌙";
 
   if (cloudEnabled && (recoveryMode || !cloudReady || authStatus !== "signed-in")) return <CloudAuth checking={authStatus === "checking" || (authStatus === "signed-in" && !cloudReady)} recoveryMode={recoveryMode} language={language} cloudError={cloudError} onRetry={() => void loadHouseholdData().catch((error) => setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ"))} onRecoveryComplete={() => setRecoveryMode(false)}/>;
@@ -913,6 +946,8 @@ export default function Home() {
         </>}
         {tab !== "settings" && <footer className="page-footer"><span>บ้านของเรา <i>•</i> พื้นที่เล็ก ๆ สำหรับทุกเรื่องในบ้าน</span><button onClick={() => void exportData()} disabled={backupBusy}><Icon name="download" size={14}/> {backupBusy ? ui("กำลังสำรอง...", "Preparing...") : ui("สำรองข้อมูล", "Back up data")}</button></footer>}
       </div>
+      {showInstallBanner && <aside className="pwa-install-tab" aria-label={ui("ติดตั้งแอป", "Install app")}><span className="pwa-install-icon"><Icon name="download" size={23}/></span><span className="pwa-install-copy"><strong>{language === "th" ? "ติดตั้ง (Install)" : "Install"}</strong><small>{installPlatform === "ios" ? ui("เพิ่มไว้บนหน้าจอโฮมของ iPhone หรือ iPad", "Add to your iPhone or iPad Home Screen") : ui("เปิดใช้งานแบบแอปเต็มหน้าจอ", "Use it like a full-screen app")}</small></span><button type="button" className="pwa-install-button" onClick={() => void installPwa()}>{ui("ติดตั้ง", "Install")}</button><button type="button" className="pwa-install-close" aria-label={ui("ซ่อนแถบติดตั้ง", "Hide install prompt")} onClick={dismissInstallBanner}><Icon name="close" size={15}/></button></aside>}
+      {showInstallGuide && <div className="modal-backdrop pwa-install-guide-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowInstallGuide(false); }}><section className="pwa-install-guide" role="dialog" aria-modal="true" aria-labelledby="pwa-install-title"><button type="button" className="icon-button pwa-guide-close" aria-label={ui("ปิด", "Close")} onClick={() => setShowInstallGuide(false)}><Icon name="close" size={18}/></button><span className="pwa-guide-icon"><Icon name="download" size={28}/></span><h2 id="pwa-install-title">{installPlatform === "ios" ? ui("ติดตั้งบน iPhone หรือ iPad", "Install on iPhone or iPad") : ui("ติดตั้งบน Android", "Install on Android")}</h2><p>{ui("ติดตั้งแล้วจะเปิดจากหน้าจอโฮม ใช้งานเต็มจอ และให้ความรู้สึกเหมือนแอป", "Open it from your Home Screen in a full-screen app experience.")}</p>{installPlatform === "ios" ? <ol><li>{ui("เปิดหน้านี้ด้วย Safari", "Open this page in Safari.")}</li><li>{ui("แตะปุ่ม แชร์ ที่แถบเครื่องมือ", "Tap the Share button in the toolbar.")}</li><li>{ui("เลือก เพิ่มไปยังหน้าจอโฮม", "Choose Add to Home Screen.")}</li><li>{ui("แตะ เพิ่ม เพื่อยืนยัน", "Tap Add to confirm.")}</li></ol> : <ol><li>{ui("แตะเมนู ⋮ ของเบราว์เซอร์", "Tap the browser menu ⋮.")}</li><li>{ui("เลือก ติดตั้งแอป หรือ เพิ่มไปยังหน้าจอหลัก", "Choose Install app or Add to Home screen.")}</li><li>{ui("แตะ ติดตั้ง เพื่อยืนยัน", "Tap Install to confirm.")}</li></ol>}<button type="button" className="primary-button pwa-guide-done" onClick={() => setShowInstallGuide(false)}>{ui("เข้าใจแล้ว", "Got it")}</button></section></div>}
       <nav className="mobile-nav">{navItems.slice(0, 2).map((item) => <button key={item.id} className={tab === item.id ? "selected" : ""} onClick={() => openTab(item.id)}><Icon name={item.icon === "ticket" ? "spark" : item.icon} size={21}/><span>{item.label === "หน้าหลัก" ? "หน้าแรก" : item.label}</span></button>)}<button className="mobile-add" onClick={() => category === "รายการที่ต้องซื้อ" ? openShoppingAdd() : openModal(tab === "services" ? "service" : tab === "items" && category === "เอกสาร" ? "note" : "item")} aria-label={copy.add}><span>＋</span><b>{language === "en" ? "Add" : "เพิ่ม"}</b></button>{navItems.slice(2).map((item) => <button key={item.id} className={tab === item.id ? "selected" : ""} onClick={() => openTab(item.id)}><Icon name={item.icon === "ticket" ? "spark" : item.icon} size={21}/><span>{item.label === "สิทธิ์บริการ" ? "บริการ" : item.label}</span></button>)}</nav>
     </section>
 
