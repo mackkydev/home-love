@@ -609,6 +609,9 @@ body{font-size:17px}
 .cloud-loading-panel strong{display:block;font-size:18px}.cloud-loading-panel p{margin:9px 0 0;color:var(--muted);font-size:14px}
 .shopping-summary{text-align:left;cursor:pointer;color:var(--ink)}
 .shopping-summary .summary-icon{background:color-mix(in srgb,var(--blue) 12%,var(--surface));color:var(--blue)}
+.service-summary{text-align:left;cursor:pointer;color:var(--ink)}
+.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.summary-grid>.summary-card{min-width:0}
 .shopping-row{padding:15px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 5px 18px #1f2c490d}
 .shopping-row.completed{opacity:.68}
 .shopping-row-main{display:flex;align-items:center;gap:12px;width:100%;padding:0;border:0;background:transparent;color:var(--ink);text-align:left}
@@ -629,7 +632,8 @@ body{font-size:17px}
   .is-list-view .filter-button{flex:none}
   .welcome-row h1{font-size:20px}
   .summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .summary-grid .shopping-summary{grid-column:1/-1;height:98px}
+  .summary-grid>.summary-card:first-child,.summary-grid .shopping-summary{grid-column:auto}
+  .summary-grid .shopping-summary,.summary-grid .service-summary{height:124px}
   .form-label input[type="date"],.form-label input[type="time"]{height:52px;min-height:52px;max-height:52px;box-sizing:border-box;line-height:normal;-webkit-appearance:none;appearance:none}
 }
 .pin-lock-card .form-label input{font-size:22px;letter-spacing:.35em;text-align:center}
