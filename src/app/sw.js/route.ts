@@ -1,7 +1,5 @@
 const buildVersion = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.VERCEL_DEPLOYMENT_ID ?? "local";
 
-export const dynamic = "force-dynamic";
-
 export function GET() {
   const script = `
 const CACHE_NAME = ${JSON.stringify(`our-home-shell-${buildVersion}`)};
