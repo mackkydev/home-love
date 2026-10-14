@@ -244,6 +244,13 @@ export default function Home() {
   const activeHouseholdRef = useRef("");
   const switchingHouseholdRef = useRef(false);
   const loadedUser = useRef("");
+  const editorOpenRef = useRef(false);
+  const cloudSavingRef = useRef(false);
+  const remoteRefreshRunningRef = useRef(false);
+  const remoteRefreshPendingRef = useRef(false);
+  const serviceWorkerRegistrationRef = useRef<ServiceWorkerRegistration | null>(null);
+  const updateWorkerRef = useRef<ServiceWorker | null>(null);
+  const reloadForUpdateRef = useRef(false);
   const mediaPickerOpen = useRef(false);
   const filterChipsRef = useRef<HTMLDivElement>(null);
   const [todayValue, setTodayValue] = useState("2026-10-09");
@@ -289,6 +296,7 @@ export default function Home() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [appUpdateReady, setAppUpdateReady] = useState(false);
   useEffect(() => { if (!ready || notificationPermission !== "granted" || !("serviceWorker" in navigator)) return; void navigator.serviceWorker.ready.then((registration) => registration.pushManager.getSubscription()).then((subscription) => setPushReady(Boolean(subscription))).catch(() => undefined); }, [ready, notificationPermission]);
 
   useEffect(() => {
@@ -382,6 +390,35 @@ export default function Home() {
     setExtraCategories(snapshot.categories);
     setCloudReady(true);
   }, []);
+  const refreshCurrentHousehold = useCallback(async (showConfirmation = false) => {
+    const currentHouse = activeHouseholdRef.current;
+    const currentUser = loadedUser.current;
+    if (!cloud || !currentHouse || !currentUser || switchingHouseholdRef.current) return;
+    if (editorOpenRef.current || cloudSavingRef.current || remoteRefreshRunningRef.current) {
+      remoteRefreshPendingRef.current = true;
+      return;
+    }
+    remoteRefreshRunningRef.current = true;
+    remoteRefreshPendingRef.current = false;
+    try {
+      await cloudQueue.current;
+      if (editorOpenRef.current || currentHouse !== activeHouseholdRef.current || currentUser !== loadedUser.current) {
+        remoteRefreshPendingRef.current = true;
+        return;
+      }
+      const opened = await openHousehold<Entry>(currentHouse);
+      if (currentHouse !== activeHouseholdRef.current || currentUser !== loadedUser.current) return;
+      cloudSnapshot.current = opened.snapshot;
+      setEntries(opened.snapshot.entries.sort((a, b) => b.date.localeCompare(a.date)));
+      setExtraCategories(opened.snapshot.categories);
+      setCloudError("");
+      if (showConfirmation) setNotice(language === "en" ? "Data is up to date" : "อัปเดตข้อมูลล่าสุดแล้ว");
+    } catch (cause) {
+      setCloudError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      remoteRefreshRunningRef.current = false;
+    }
+  }, [language]);
   useEffect(() => {
     if (!cloud) return;
     let active = true;
@@ -433,12 +470,15 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if (!cloudReady || !householdId || !cloudSnapshot.current) return;
+    cloudSavingRef.current = true;
+    let queued = false;
     const timer = setTimeout(() => {
-      if (switchingHouseholdRef.current || householdId !== activeHouseholdRef.current) return;
+      queued = true;
+      if (switchingHouseholdRef.current || householdId !== activeHouseholdRef.current) { cloudSavingRef.current = false; return; }
       const currentEntries = entries;
       const currentCategories = extraCategories;
       cloudQueue.current = cloudQueue.current.catch(() => undefined).then(async () => {
-        if (!cloudSnapshot.current || householdId !== activeHouseholdRef.current || switchingHouseholdRef.current) return;
+        if (!cloudSnapshot.current || householdId !== activeHouseholdRef.current || switchingHouseholdRef.current) { cloudSavingRef.current = false; return; }
         try {
           setCloudSaving(true);
           cloudSnapshot.current = await saveHousehold(householdId, currentEntries, currentCategories, cloudSnapshot.current);
@@ -446,11 +486,12 @@ export default function Home() {
         } catch (error) {
           setCloudError(error instanceof Error ? error.message : "บันทึกข้อมูลออนไลน์ไม่สำเร็จ");
         } finally {
+          cloudSavingRef.current = false;
           setCloudSaving(false);
         }
       });
     }, 450);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); if (!queued) cloudSavingRef.current = false; };
   }, [entries, extraCategories, cloudReady, householdId, syncRevision]);
   useEffect(() => {
     if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
@@ -459,8 +500,71 @@ export default function Home() {
       void caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))));
       return;
     }
-    void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    let disposed = false;
+    let updateTimer: ReturnType<typeof setInterval> | undefined;
+    const offerUpdate = (worker: ServiceWorker | null) => {
+      if (!worker || !navigator.serviceWorker.controller) return;
+      updateWorkerRef.current = worker;
+      setAppUpdateReady(true);
+    };
+    const checkForUpdate = () => { void serviceWorkerRegistrationRef.current?.update().catch(() => undefined); };
+    const onVisible = () => { if (document.visibilityState === "visible") checkForUpdate(); };
+    const onControllerChange = () => { if (reloadForUpdateRef.current) window.location.reload(); };
+    navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", checkForUpdate);
+    window.addEventListener("online", checkForUpdate);
+    void navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then((registration) => {
+      if (disposed) return;
+      serviceWorkerRegistrationRef.current = registration;
+      offerUpdate(registration.waiting);
+      registration.addEventListener("updatefound", () => {
+        const worker = registration.installing;
+        worker?.addEventListener("statechange", () => { if (worker.state === "installed") offerUpdate(worker); });
+      });
+      updateTimer = setInterval(checkForUpdate, 5 * 60_000);
+      checkForUpdate();
+    }).catch(() => undefined);
+    return () => {
+      disposed = true;
+      if (updateTimer) clearInterval(updateTimer);
+      navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", checkForUpdate);
+      window.removeEventListener("online", checkForUpdate);
+    };
   }, []);
+  useEffect(() => {
+    editorOpenRef.current = Boolean(modal || shoppingDialog || calendarEditId || deleteTarget || deleteOccurrenceTarget || photoDeleteTarget);
+    cloudSavingRef.current = cloudSaving;
+    if (!editorOpenRef.current && !cloudSaving && remoteRefreshPendingRef.current) void refreshCurrentHousehold();
+  }, [modal, shoppingDialog, calendarEditId, deleteTarget, deleteOccurrenceTarget, photoDeleteTarget, cloudSaving, refreshCurrentHousehold]);
+  useEffect(() => {
+    const client = cloud;
+    if (!client || !cloudReady || !householdId) return;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => void refreshCurrentHousehold(), 900);
+    };
+    const channel = client.channel(`household-live-${householdId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "entries", filter: `household_id=eq.${householdId}` }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "household_categories", filter: `household_id=eq.${householdId}` }, scheduleRefresh)
+      .subscribe();
+    const onVisible = () => { if (document.visibilityState === "visible") scheduleRefresh(); };
+    const fallbackTimer = setInterval(() => { if (document.visibilityState === "visible") scheduleRefresh(); }, 45_000);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", scheduleRefresh);
+    window.addEventListener("online", scheduleRefresh);
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      clearInterval(fallbackTimer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", scheduleRefresh);
+      window.removeEventListener("online", scheduleRefresh);
+      void client.removeChannel(channel);
+    };
+  }, [cloudReady, householdId, refreshCurrentHousehold]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(""), 2600); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => { setNotificationNow(Date.now()); const timer = setInterval(() => setNotificationNow(Date.now()), 60_000); return () => clearInterval(timer); }, []);
   useEffect(() => {
@@ -896,6 +1000,12 @@ export default function Home() {
     setShowInstallGuide(true);
   };
   const dismissInstallBanner = () => { sessionStorage.setItem("home-love-install-dismissed", "1"); setShowInstallBanner(false); setShowInstallGuide(false); };
+  const applyAppUpdate = () => {
+    const worker = updateWorkerRef.current ?? serviceWorkerRegistrationRef.current?.waiting;
+    if (!worker) { void serviceWorkerRegistrationRef.current?.update(); return; }
+    reloadForUpdateRef.current = true;
+    worker.postMessage({ type: "SKIP_WAITING" });
+  };
   const greetingIcon = hour < 11 ? "🌤️" : hour < 16 ? "☀️" : hour < 19 ? "🌇" : "🌙";
 
   if (cloudEnabled && (recoveryMode || !cloudReady || authStatus !== "signed-in")) return <CloudAuth checking={authStatus === "checking" || (authStatus === "signed-in" && !cloudReady)} recoveryMode={recoveryMode} language={language} cloudError={cloudError} onRetry={() => void loadHouseholdData().catch((error) => setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ"))} onRecoveryComplete={() => setRecoveryMode(false)}/>;
@@ -921,6 +1031,7 @@ export default function Home() {
       {cloudError && <div className="cloud-sync-error" role="alert">{ui("บันทึกออนไลน์ไม่สำเร็จ", "Online save failed")}: {cloudError} <button type="button" onClick={() => setSyncRevision((value) => value + 1)}>{ui("ลองอีกครั้ง", "Retry")}</button></div>}
       {pendingLocalImport && <div className="cloud-import-banner"><span>{ui(`พบบันทึกเดิม ${pendingLocalImport.entries.length} รายการในเครื่องนี้`, `Found ${pendingLocalImport.entries.length} local records on this device`)}</span><button type="button" onClick={() => { setEntries(pendingLocalImport.entries); setExtraCategories(pendingLocalImport.categories); setPendingLocalImport(null); setNotice(ui("กำลังนำข้อมูลเดิมเข้าบัญชี", "Importing local records")); }}>{ui("นำเข้าบัญชี", "Import")}</button><button type="button" onClick={() => setPendingLocalImport(null)}>{ui("ภายหลัง", "Later")}</button></div>}
       {showAlerts && <section className="alerts-popover" aria-label={ui("รายการแจ้งเตือน", "Notifications")}><div className="alerts-heading"><div><strong>{ui("การแจ้งเตือน", "Notifications")}</strong><small>{ui(`${unreadAlertCount} รายการที่ยังไม่อ่าน`, `${unreadAlertCount} unread`)}</small></div><button type="button" aria-label={ui("ปิดการแจ้งเตือน", "Close notifications")} onClick={() => setShowAlerts(false)}><Icon name="close" size={16}/></button></div>{inAppAlerts.length ? <><ul>{inAppAlerts.map((alert) => <li key={alert.key} className={readAlertKeys.has(alert.key) ? "is-read" : "is-unread"}><span className="alert-dot"/><div><strong>{alert.title}</strong><small>{alert.body}</small><small>{new Date(alert.occurredAt).toLocaleString(language === "en" ? "en-GB" : "th-TH", { dateStyle: "medium", timeStyle: "short" })}</small></div><button type="button" onClick={() => { void markAlertsRead([alert.key]); setShowAlerts(false); openDetail(alert.entryId, alert.occurrenceDate); }}>{ui("ดู", "View")}</button></li>)}</ul>{unreadAlertCount > 0 && <button className="alerts-mark-all" type="button" onClick={() => void markAlertsRead(inAppAlerts.map((alert) => alert.key))}>{ui("ทำเครื่องหมายว่าอ่านทั้งหมด", "Mark all as read")}</button>}</> : <p className="alerts-empty">{ui("ยังไม่มีการแจ้งเตือน", "No notifications yet")}</p>}{notificationPermission !== "denied" && !pushReady && <button className="enable-notifications" type="button" onClick={() => void enablePush()}>{ui("เปิดแจ้งเตือนบนโทรศัพท์", "Enable phone notifications")}</button>}{pushReady && <p className="notification-help">{ui("เปิดเว็บพุชแล้ว", "Web Push enabled")}</p>}{notificationPermission === "denied" && <p className="notification-help">{ui("การแจ้งเตือนถูกปิดไว้ เปิดสิทธิ์ได้ในการตั้งค่าเว็บไซต์", "Notifications are blocked in site settings")}</p>}{notificationPermission === "unsupported" && <p className="notification-help">{ui("เบราว์เซอร์นี้ไม่รองรับการแจ้งเตือน", "This browser does not support notifications")}</p>}</section>}
+      {appUpdateReady && <aside className="app-update-tab" role="status"><span className="app-update-icon"><Icon name="download" size={22}/></span><span className="app-update-copy"><strong>{ui("มีแอปเวอร์ชันใหม่", "A new app version is ready")}</strong><small>{ui("กดอัปเดตได้ทันที โดยไม่ต้องปิดแอป", "Update now without closing the app")}</small></span><button type="button" onClick={applyAppUpdate}>{ui("อัปเดตตอนนี้", "Update now")}</button></aside>}
 
       <div className="content-area">
         {tab === "settings" ? <SettingsPage houses={households} activeId={householdId} defaultHouseholdId={defaultHouseholdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} userDisplayName={userDisplayName} onDisplayNameChange={async (name) => { if (!cloud) return false; const { error } = await cloud.auth.updateUser({ data: { full_name: name } }); if (error) return false; setUserDisplayName(name); return true; }} displaySettings={displaySettings} notificationPreferences={notificationPreferences} onNotificationPreferenceChange={(name, enabled) => void changeNotificationPreference(name, enabled)} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onMakeDefault={(id) => void makeDefaultHousehold(id)} onRename={(id, name) => renameCurrentHousehold(id, name)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => void signOut()}/> : <>

@@ -1,15 +1,26 @@
-const CACHE_NAME = "our-home-shell-v4";
+const buildVersion = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.VERCEL_DEPLOYMENT_ID ?? "local";
+
+export const dynamic = "force-dynamic";
+
+export function GET() {
+  const script = `
+const CACHE_NAME = ${JSON.stringify(`our-home-shell-${buildVersion}`)};
 const APP_SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 const IS_LOCAL_DEV = self.location.hostname === "localhost" || self.location.hostname === "127.0.0.1";
 
 self.addEventListener("install", (event) => {
   if (!IS_LOCAL_DEV) event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
-  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => IS_LOCAL_DEV || key !== CACHE_NAME).map((key) => caches.delete(key)))));
-  self.clients.claim();
+  event.waitUntil(Promise.all([
+    caches.keys().then((keys) => Promise.all(keys.filter((key) => IS_LOCAL_DEV || key !== CACHE_NAME).map((key) => caches.delete(key)))),
+    self.clients.claim(),
+  ]));
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("fetch", (event) => {
@@ -50,3 +61,13 @@ self.addEventListener("notificationclick", (event) => {
     await self.clients.openWindow(url);
   }));
 });
+`;
+
+  return new Response(script, {
+    headers: {
+      "Content-Type": "application/javascript; charset=utf-8",
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Service-Worker-Allowed": "/",
+    },
+  });
+}
