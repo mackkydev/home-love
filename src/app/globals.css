@@ -636,6 +636,8 @@ body{font-size:17px}
 .shopping-row-actions .primary-button{min-height:36px}.shopping-completed{display:flex;align-items:center;gap:5px;margin-right:auto;color:#1e9d72;font-size:13px;font-weight:700}
 .shopping-row-detail{color:var(--muted);font-size:13px}
 .shopping-modal .form-label{min-width:0}
+.purchase-total-preview{display:flex;align-items:center;gap:10px;margin:-3px 0 13px;padding:11px 13px;border:1px solid color-mix(in srgb,var(--blue) 20%,var(--line));border-radius:11px;background:color-mix(in srgb,var(--blue) 7%,var(--surface));color:var(--muted)}
+.purchase-total-preview span{font-size:13px;font-weight:700}.purchase-total-preview strong{margin-left:auto;color:var(--blue);font-size:19px}.purchase-total-preview small{font-size:12px}
 @keyframes cloud-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.cloud-loading-orbit{animation:none;border-top-color:var(--blue)}}
 @media(max-width:760px){
