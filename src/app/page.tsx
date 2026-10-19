@@ -273,7 +273,7 @@ export default function Home() {
   const [endingSoon, setEndingSoon] = useState(false);
   const [notice, setNotice] = useState("");
   const [form, setForm] = useState({ name: "", category: "ของใช้ในบ้าน", transaction: "expense" as "income" | "expense", price: "", purchaseQuantity: "1", purchaseUnit: "ชิ้น", stockAddedQuantity: "", total: "", unit: "ครั้ง", note: "", store: "", forPerson: "", paidDate: "", startDate: "", medMeals: [] as string[], medFoodTiming: "", medFrequencyHours: "", medDose: "", medDoseUnit: "เม็ด", medDetails: "", medReminders: [] as NonNullable<MedicineInstructions["reminders"]>, useReminders: false, photos: [] as string[], attachments: [] as Attachment[], trackStock: false, stockQuantity: "", stockDailyUse: "", stockUnit: "เม็ด", stockAutoDeduct: false, alertDays: "3", serviceAutoDeduct: false, serviceAutoAmount: "1", serviceAutoEveryDays: "1" });
-  const [shoppingDialog, setShoppingDialog] = useState<"add" | "buy" | null>(null);
+  const [shoppingDialog, setShoppingDialog] = useState<"add" | null>(null);
   const [shoppingTargetId, setShoppingTargetId] = useState("");
   const [shoppingForm, setShoppingForm] = useState({ name: "", linkedEntryId: "", targetCategory: "ของใช้ในบ้าน", dueDate: "", quantity: "1", unit: "ชิ้น", store: "", price: "", date: "", note: "", stockAddedQuantity: "" });
   const [householdPeople, setHouseholdPeople] = useState<HouseholdPerson[]>([]);
@@ -697,9 +697,9 @@ export default function Home() {
     setModal("renew");
   };
   const buyAgain = (entry: Entry) => {
-    setEditingEntry(entry);
-    setForm((current) => ({ ...current, name: entry.name, category: entry.category, store: entry.store ?? "", price: "", purchaseQuantity: "1", purchaseUnit: entry.purchases?.at(-1)?.unit ?? (isMedicineEntry(entry.category, entry.name) ? "เม็ด" : "ชิ้น"), stockAddedQuantity: "", paidDate: today() }));
-    setModal("purchase");
+    setShoppingTargetId("");
+    setShoppingForm({ name: entry.name, linkedEntryId: entry.id, targetCategory: entry.category, dueDate: today(), quantity: "1", unit: entry.purchases?.at(-1)?.unit ?? (isMedicineEntry(entry.category, entry.name) ? "เม็ด" : "ชิ้น"), store: "", price: "", date: today(), note: "", stockAddedQuantity: "" });
+    setShoppingDialog("add");
   };
   const saveEntry = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -714,15 +714,22 @@ export default function Home() {
     if (modal === "purchase") {
       const quantity = Number(form.purchaseQuantity);
       const price = Number(form.price);
-      if (!editingEntry || editingEntry.kind !== "item" || isIncomeEntry(editingEntry)) return;
+      const shopping = entries.find((entry) => entry.id === shoppingTargetId && entry.kind === "shopping");
+      const purchaseTarget = editingEntry?.kind === "item" && !isIncomeEntry(editingEntry) ? editingEntry : undefined;
+      if (!purchaseTarget && !shopping) return;
       if (!form.price || !Number.isFinite(price) || price < 0) { setNotice(ui("กรุณาระบุราคา", "Enter a valid price")); return; }
       if (!Number.isInteger(quantity) || quantity < 1) { setNotice(ui("กรุณาระบุจำนวนที่ซื้อเป็นจำนวนเต็มมากกว่า 0", "Enter a whole-number quantity greater than zero")); return; }
       if (!/^\d{4}-\d{2}-\d{2}$/.test(form.paidDate)) { setNotice(ui("กรุณาระบุวันที่ซื้อ", "Enter the purchase date")); return; }
       const stockAdded = form.stockAddedQuantity.trim() === "" ? 0 : Number(form.stockAddedQuantity);
       if (!Number.isFinite(stockAdded) || stockAdded < 0) { setNotice(ui("กรุณาระบุจำนวนเพิ่มคงเหลือให้ถูกต้อง", "Enter a valid stock amount")); return; }
       const purchase: Purchase = { id: crypto.randomUUID(), date: form.paidDate, store: form.store.trim(), price: quantity * price, quantity, unit: form.purchaseUnit.trim() || "ชิ้น" };
-      setEntries((previous) => previous.map((entry) => entry.id === editingEntry.id ? { ...entry, store: purchase.store || entry.store, price: purchase.price, date: purchase.date > entry.date ? purchase.date : entry.date, purchases: [...purchaseHistory(entry), purchase], stock: entry.stock ? { ...entry.stock, quantity: stockRemaining(entry.stock) + stockAdded, updatedAt: today() } : undefined } : entry));
-      setModal(null); setEditingEntry(null); setNotice(ui("บันทึกการซื้อเพิ่มแล้ว", "Purchase saved")); return;
+      setEntries((previous) => {
+        const completed = previous.map((entry) => shopping && entry.id === shopping.id ? { ...entry, shopping: { ...entry.shopping!, completedAt: purchase.date }, purchases: [purchase] } : purchaseTarget && entry.id === purchaseTarget.id ? { ...entry, store: purchase.store || entry.store, price: purchase.price, date: purchase.date > entry.date ? purchase.date : entry.date, purchases: [...purchaseHistory(entry), purchase], stock: entry.stock ? { ...entry.stock, quantity: stockRemaining(entry.stock) + stockAdded, updatedAt: today() } : undefined } : entry);
+        if (purchaseTarget || !shopping) return completed;
+        const newItem: Entry = { id: crypto.randomUUID(), name: shopping.name, category: shopping.shopping?.targetCategory ?? "ของใช้ในบ้าน", kind: "item", transaction: "expense", date: purchase.date, actor: "คุณ", store: purchase.store, price: purchase.price, note: shopping.note, purchases: [purchase] };
+        return [newItem, ...completed];
+      });
+      setModal(null); setEditingEntry(null); setShoppingTargetId(""); setNotice(ui("บันทึกการซื้อแล้ว", "Purchase saved")); return;
     }
     if ((modal === "item" || modal === "edit" && editingEntry?.kind === "item") && form.price && form.category !== "บริการ" && !(form.category === "รายรับ" || form.category === "การเงิน" && form.transaction === "income") && (!Number.isInteger(Number(form.purchaseQuantity)) || Number(form.purchaseQuantity) < 1)) { setNotice(ui("กรุณาระบุจำนวนที่ซื้อเป็นจำนวนเต็มมากกว่า 0", "Enter a whole-number quantity greater than zero")); return; }
     if (modal === "edit") {
@@ -947,32 +954,21 @@ export default function Home() {
   };
 
   const displaySettings = <section className="preferences-popover settings-display-controls" aria-label={copy.preferences}><div className="preferences-heading"><strong>{copy.preferences}</strong></div><div className="preference-group"><span>{copy.appearance}</span><div className="theme-options appearance-options"><button type="button" className={theme === "light" ? "selected" : ""} onClick={() => setTheme("light")}>☀ {copy.light}</button><button type="button" className={theme === "dark" ? "selected" : ""} onClick={() => setTheme("dark")}>☾ {copy.dark}</button><button type="button" className={theme === "system" ? "selected" : ""} onClick={() => setTheme("system")}>◐ {language === "en" ? "System" : "ตามระบบ"}</button></div></div><div className="preference-group"><span>{language === "en" ? "Color style" : "รูปแบบโทนสี"}</span><div className="theme-options"><button type="button" className={paletteMode === "normal" ? "selected" : ""} onClick={() => setPaletteMode("normal")}>{language === "en" ? "Normal" : "ปกติ"}</button><button type="button" className={paletteMode === "pastel" ? "selected" : ""} onClick={() => setPaletteMode("pastel")}>{language === "en" ? "Pastel" : "พาสเทล"}</button></div></div><div className="preference-group"><span>{copy.color}</span><div className="accent-options">{(["blue", "violet", "green", "rose", "pink", "gray", "gold"] as Accent[]).map((color) => <button type="button" key={color} className={`${color} ${accent === color ? "selected" : ""}`} onClick={() => setAccent(color)} aria-label={color}/>)}</div></div><div className="preference-group custom-color-group"><span>{language === "en" ? "Custom color" : "เลือกสีเอง"}</span><label><input type="color" value={customColor} onChange={(event) => { setCustomColor(event.target.value); setAccent("custom"); }}/><i style={{ background: customColor }}/><strong>{customColor.toUpperCase()}</strong></label></div><button type="button" className="preferences-backup" disabled={backupBusy} onClick={() => void exportData()}><Icon name="download" size={18}/>{backupBusy ? ui("กำลังเตรียมไฟล์สำรอง...", "Preparing backup...") : ui("สำรองข้อมูลพร้อมรูปภาพ", "Back up data with photos")}</button></section>;
-  const openShoppingAdd = () => { setShoppingForm({ name: "", linkedEntryId: "", targetCategory: "ของใช้ในบ้าน", dueDate: today(), quantity: "1", unit: "ชิ้น", store: "", price: "", date: today(), note: "", stockAddedQuantity: "" }); setShoppingDialog("add"); };
-  const openShoppingBuy = (entry: Entry) => { setShoppingTargetId(entry.id); setShoppingForm({ name: entry.name, linkedEntryId: entry.shopping?.linkedEntryId ?? "", targetCategory: entry.shopping?.targetCategory ?? "ของใช้ในบ้าน", dueDate: entry.shopping?.dueDate ?? today(), quantity: String(entry.shopping?.quantity ?? 1), unit: entry.shopping?.unit ?? "ชิ้น", store: "", price: "", date: today(), note: "", stockAddedQuantity: "" }); setShoppingDialog("buy"); };
+  const openShoppingAdd = () => { setShoppingTargetId(""); setShoppingForm({ name: "", linkedEntryId: "", targetCategory: "ของใช้ในบ้าน", dueDate: today(), quantity: "1", unit: "ชิ้น", store: "", price: "", date: today(), note: "", stockAddedQuantity: "" }); setShoppingDialog("add"); };
+  const openShoppingBuy = (entry: Entry) => {
+    const linked = entries.find((item) => item.id === entry.shopping?.linkedEntryId && item.kind === "item" && !isIncomeEntry(item));
+    setShoppingTargetId(entry.id);
+    setEditingEntry(linked ?? null);
+    setForm((current) => ({ ...current, name: entry.name, category: linked?.category ?? entry.shopping?.targetCategory ?? "ของใช้ในบ้าน", store: "", price: "", purchaseQuantity: String(entry.shopping?.quantity ?? 1), purchaseUnit: entry.shopping?.unit ?? linked?.purchases?.at(-1)?.unit ?? "ชิ้น", stockAddedQuantity: "", paidDate: today() }));
+    setModal("purchase");
+  };
   const saveShopping = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const name = shoppingForm.name.trim(); const quantity = Number(shoppingForm.quantity);
     if (!name || !Number.isFinite(quantity) || quantity <= 0) return;
-    if (shoppingDialog === "add") {
-      const linked = entries.find((entry) => entry.id === shoppingForm.linkedEntryId && entry.kind === "item");
-      const newEntry: Entry = { id: crypto.randomUUID(), name, category: "รายการที่ต้องซื้อ", kind: "shopping", date: today(), actor: "คุณ", note: shoppingForm.note.trim() || undefined, shopping: { linkedEntryId: linked?.id, targetCategory: linked?.category ?? shoppingForm.targetCategory, dueDate: shoppingForm.dueDate || today(), quantity, unit: shoppingForm.unit.trim() || "ชิ้น" } };
-      setEntries((previous) => [newEntry, ...previous]); setShoppingDialog(null); setNotice(ui("เพิ่มในรายการที่ต้องซื้อแล้ว", "Added to shopping list")); return;
-    }
-    if (shoppingDialog === "buy") {
-      const shopping = entries.find((entry) => entry.id === shoppingTargetId && entry.kind === "shopping");
-      const price = Number(shoppingForm.price); const stockAdded = shoppingForm.stockAddedQuantity ? Number(shoppingForm.stockAddedQuantity) : 0;
-      if (!shopping || !shoppingForm.price || !Number.isFinite(price) || price < 0 || !Number.isFinite(stockAdded) || stockAdded < 0) { setNotice(ui("กรุณาระบุราคาและจำนวนให้ถูกต้อง", "Enter a valid price and quantity")); return; }
-      const totalPrice = quantity * price;
-      const purchase: Purchase = { id: crypto.randomUUID(), date: shoppingForm.date || today(), store: shoppingForm.store.trim(), price: totalPrice, quantity, unit: shoppingForm.unit.trim() || "ชิ้น" };
-      const linked = entries.find((entry) => entry.id === shopping.shopping?.linkedEntryId && entry.kind === "item");
-      setEntries((previous) => {
-        const completed = previous.map((entry) => entry.id === shopping.id ? { ...entry, shopping: { ...entry.shopping!, completedAt: purchase.date }, note: shoppingForm.note.trim() || entry.note, purchases: [purchase] } : linked && entry.id === linked.id ? { ...entry, price: totalPrice, store: purchase.store || entry.store, date: purchase.date > entry.date ? purchase.date : entry.date, purchases: [...purchaseHistory(entry), purchase], stock: entry.stock ? { ...entry.stock, quantity: stockRemaining(entry.stock) + stockAdded, updatedAt: today() } : undefined } : entry);
-        if (linked) return completed;
-        const newItem: Entry = { id: crypto.randomUUID(), name: shopping.name, category: shopping.shopping?.targetCategory ?? "ของใช้ในบ้าน", kind: "item", transaction: "expense", date: purchase.date, actor: "คุณ", store: purchase.store, price: totalPrice, note: shoppingForm.note.trim() || undefined, purchases: [purchase] };
-        return [newItem, ...completed];
-      });
-      setShoppingDialog(null); setNotice(ui("บันทึกการซื้อแล้ว", "Purchase recorded"));
-    }
+    const linked = entries.find((entry) => entry.id === shoppingForm.linkedEntryId && entry.kind === "item");
+    const newEntry: Entry = { id: crypto.randomUUID(), name, category: "รายการที่ต้องซื้อ", kind: "shopping", date: today(), actor: "คุณ", note: shoppingForm.note.trim() || undefined, shopping: { linkedEntryId: linked?.id, targetCategory: linked?.category ?? shoppingForm.targetCategory, dueDate: shoppingForm.dueDate || today(), quantity, unit: shoppingForm.unit.trim() || "ชิ้น" } };
+    setEntries((previous) => [newEntry, ...previous]); setShoppingDialog(null); setNotice(ui("เพิ่มในรายการที่ต้องซื้อแล้ว", "Added to shopping list"));
   };
   const changeNotificationPreference = async (name: string, enabled: boolean) => {
     if (!cloud) { setNotificationPreferences((current) => ({ ...current, [name]: enabled })); return; }
