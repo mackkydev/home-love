@@ -805,6 +805,8 @@ body{font-size:17px}
 .purchase-history .section-heading{margin-bottom:16px}
 .purchase-history .section-heading>div{min-width:0}
 .purchase-history .section-heading p{margin:4px 0 0;color:var(--muted);font-size:12px}
+.purchase-history-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.purchase-unit-note{margin:-2px 0 9px;color:var(--muted);font-size:12px;line-height:1.45}
 .purchase-history-list{display:grid;gap:10px}
 .purchase-history-card{padding:14px 15px;border:1px solid var(--line);border-radius:14px;background:var(--canvas)}
 .purchase-history-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
