@@ -645,6 +645,8 @@ body{font-size:17px}
 .shopping-history-filters .search-field{height:45px;background:var(--canvas)}
 .shopping-history-date{min-width:0}.shopping-history-date .date-picker-trigger{min-height:45px;background:var(--canvas)}
 .shopping-filter-clear{height:39px;padding:0 10px;border:0;background:transparent;color:var(--blue);font-size:13px;font-weight:700}
+.calendar-detail-photos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 18px}
+.calendar-detail-photos img{display:block;width:100%;height:150px;object-fit:cover;border:1px solid var(--line);border-radius:13px;background:var(--canvas)}
 .summary-grid>.summary-card{min-height:116px}
 .purchase-total-preview{display:flex;align-items:center;gap:10px;margin:-3px 0 13px;padding:11px 13px;border:1px solid color-mix(in srgb,var(--blue) 20%,var(--line));border-radius:11px;background:color-mix(in srgb,var(--blue) 7%,var(--surface));color:var(--muted)}
 .purchase-total-preview span{font-size:13px;font-weight:700}.purchase-total-preview strong{margin-left:auto;color:var(--blue);font-size:19px}.purchase-total-preview small{font-size:12px}
@@ -684,10 +686,12 @@ body{font-size:17px}
 @media(max-width:760px){
   .summary-grid>.summary-card,.summary-grid .shopping-summary,.summary-grid .service-summary{height:auto;min-height:104px}
   .shopping-list-tabs{margin-bottom:11px}
-  .shopping-history-filters{grid-template-columns:1fr 1fr;padding:8px}
-  .shopping-history-filters .search-field{grid-column:1/-1;width:100%}
-  .shopping-history-date{grid-column:1/2}
-  .shopping-filter-clear{grid-column:2/3;justify-self:end}
+  .shopping-history-filters{grid-template-columns:minmax(0,1fr) minmax(116px,42%) auto;gap:5px;padding:8px}
+  .shopping-history-filters .search-field{grid-column:auto;width:100%}
+  .shopping-history-date{grid-column:auto}
+  .shopping-filter-clear{grid-column:auto;padding:0 4px}
+  .calendar-detail-photos{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .calendar-detail-photos img{height:125px}
 }
 .pin-lock-card .form-label input{font-size:22px;letter-spacing:.35em;text-align:center}
 .pin-lock-signout,.pin-enable-device{display:block;width:100%;margin-top:13px;padding:9px 12px;border:0;background:transparent;color:var(--blue);font-size:13px;font-weight:700;text-align:center}

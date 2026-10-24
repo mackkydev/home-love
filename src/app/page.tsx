@@ -261,6 +261,7 @@ export default function Home() {
   const [deletePastAppointmentsOpen, setDeletePastAppointmentsOpen] = useState(false);
   const [deleteOccurrenceTarget, setDeleteOccurrenceTarget] = useState<{ entry: Entry; date: string } | null>(null);
   const [calendarEditId, setCalendarEditId] = useState<string | null>(null);
+  const [calendarAddRequest, setCalendarAddRequest] = useState(0);
   const [photoDeleteTarget, setPhotoDeleteTarget] = useState<{ kind: "form"; index: number } | { kind: "attachment"; index: number } | { kind: "entry"; entryId: string; index: number } | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [selectedOccurrenceDate, setSelectedOccurrenceDate] = useState<string | null>(null);
@@ -1043,7 +1044,7 @@ export default function Home() {
         {tab === "settings" ? <SettingsPage houses={households} activeId={householdId} defaultHouseholdId={defaultHouseholdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} userDisplayName={userDisplayName} onDisplayNameChange={async (name) => { if (!cloud) return false; const { error } = await cloud.auth.updateUser({ data: { full_name: name } }); if (error) return false; setUserDisplayName(name); return true; }} displaySettings={displaySettings} notificationPreferences={notificationPreferences} onNotificationPreferenceChange={(name, enabled) => void changeNotificationPreference(name, enabled)} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onMakeDefault={(id) => void makeDefaultHousehold(id)} onRename={(id, name) => renameCurrentHousehold(id, name)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => void signOut()}/> : <>
         {(tab === "home" || tab === "calendar") && <section className="welcome-row"><div><div className="eyebrow"><span className="greeting-time-icon" aria-hidden="true">{greetingIcon}</span> {headerDate}</div>{tab === "home" ? <div className="welcome-heading-line"><h1>{ui("สวัสดี", "Hello")} {userDisplayName || ui("คุณ", "you")}</h1><p>{copy.intro}</p></div> : <><h1>{ui("บันทึกแจ้งเตือน", "Calendar")}</h1><p>{ui("บันทึกและจัดการแจ้งเตือนในบ้าน", "Manage household reminders")}</p></>}</div><button className="primary-button desktop-add" onClick={() => openModal("item")}><span>＋</span> {copy.add}</button></section>}
 
-        {tab === "calendar" ? <CalendarPage entries={entries} language={language} householdId={householdId} editTarget={calendarEditTarget} onEditDone={() => setCalendarEditId(null)} onSave={(entry) => setEntries((previous) => [entry, ...previous])} onUpdate={(updated) => setEntries((previous) => previous.map((entry) => entry.id === updated.id ? updated : entry))} onDelete={removeCalendarOccurrence} onDeletePast={() => setDeletePastAppointmentsOpen(true)} onOpenEntry={openDetail}/> : tab === "home" ? <>
+        {tab === "calendar" ? <CalendarPage entries={entries} language={language} householdId={householdId} editTarget={calendarEditTarget} openRequest={calendarAddRequest} onEditDone={() => setCalendarEditId(null)} onSave={(entry) => setEntries((previous) => [entry, ...previous])} onUpdate={(updated) => setEntries((previous) => previous.map((entry) => entry.id === updated.id ? updated : entry))} onDelete={removeCalendarOccurrence} onDeletePast={() => setDeletePastAppointmentsOpen(true)} onOpenEntry={openDetail}/> : tab === "home" ? <>
           <section className="summary-grid">
             <article className="summary-card blue-summary"><div className="summary-top"><span>{ui("ค่าใช้จ่ายเดือนนี้", "This month's expenses")}</span><span className="summary-icon"><Icon name="wallet" size={19}/></span></div><strong className="summary-number">฿{currency(spent)}</strong><div className="summary-decoration"/></article>
             <article className="summary-card income-summary"><div className="summary-top"><span>{ui("รายรับเดือนนี้", "This month's income")}</span><span className="summary-icon income-icon"><Icon name="wallet" size={19}/></span></div><strong className="summary-number">฿{currency(income)}</strong><div className="mini-bars"><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/></div></article>
@@ -1064,7 +1065,7 @@ export default function Home() {
       </div>
       {showInstallBanner && <aside className="pwa-install-tab" aria-label={ui("ติดตั้งแอป", "Install app")}><span className="pwa-install-icon"><Icon name="download" size={23}/></span><span className="pwa-install-copy"><strong>{language === "th" ? "ติดตั้ง (Install)" : "Install"}</strong><small>{installPlatform === "ios" ? ui("เพิ่มไว้บนหน้าจอโฮมของ iPhone หรือ iPad", "Add to your iPhone or iPad Home Screen") : ui("เปิดใช้งานแบบแอปเต็มหน้าจอ", "Use it like a full-screen app")}</small></span><button type="button" className="pwa-install-button" onClick={() => void installPwa()}>{ui("ติดตั้ง", "Install")}</button><button type="button" className="pwa-install-close" aria-label={ui("ซ่อนแถบติดตั้ง", "Hide install prompt")} onClick={dismissInstallBanner}><Icon name="close" size={15}/></button></aside>}
       {showInstallGuide && <div className="modal-backdrop pwa-install-guide-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowInstallGuide(false); }}><section className="pwa-install-guide" role="dialog" aria-modal="true" aria-labelledby="pwa-install-title"><button type="button" className="icon-button pwa-guide-close" aria-label={ui("ปิด", "Close")} onClick={() => setShowInstallGuide(false)}><Icon name="close" size={18}/></button><span className="pwa-guide-icon"><Icon name="download" size={28}/></span><h2 id="pwa-install-title">{installPlatform === "ios" ? ui("ติดตั้งบน iPhone หรือ iPad", "Install on iPhone or iPad") : ui("ติดตั้งบน Android", "Install on Android")}</h2><p>{ui("ติดตั้งแล้วจะเปิดจากหน้าจอโฮม ใช้งานเต็มจอ และให้ความรู้สึกเหมือนแอป", "Open it from your Home Screen in a full-screen app experience.")}</p>{installPlatform === "ios" ? <ol><li>{ui("เปิดหน้านี้ด้วย Safari", "Open this page in Safari.")}</li><li>{ui("แตะปุ่ม แชร์ ที่แถบเครื่องมือ", "Tap the Share button in the toolbar.")}</li><li>{ui("เลือก เพิ่มไปยังหน้าจอโฮม", "Choose Add to Home Screen.")}</li><li>{ui("แตะ เพิ่ม เพื่อยืนยัน", "Tap Add to confirm.")}</li></ol> : <ol><li>{ui("แตะเมนู ⋮ ของเบราว์เซอร์", "Tap the browser menu ⋮.")}</li><li>{ui("เลือก ติดตั้งแอป หรือ เพิ่มไปยังหน้าจอหลัก", "Choose Install app or Add to Home screen.")}</li><li>{ui("แตะ ติดตั้ง เพื่อยืนยัน", "Tap Install to confirm.")}</li></ol>}<button type="button" className="primary-button pwa-guide-done" onClick={() => setShowInstallGuide(false)}>{ui("เข้าใจแล้ว", "Got it")}</button></section></div>}
-      <nav className="mobile-nav">{navItems.slice(0, 2).map((item) => <button key={item.id} className={tab === item.id ? "selected" : ""} onClick={() => openTab(item.id)}><Icon name={item.icon === "ticket" ? "spark" : item.icon} size={21}/><span>{item.label === "หน้าหลัก" ? "หน้าแรก" : item.label}</span></button>)}<button className="mobile-add" onClick={() => category === "รายการที่ต้องซื้อ" ? openShoppingAdd() : openModal(tab === "services" ? "service" : tab === "items" && category === "เอกสาร" ? "note" : "item")} aria-label={copy.add}><span>＋</span><b>{language === "en" ? "Add" : "เพิ่ม"}</b></button>{navItems.slice(2).map((item) => <button key={item.id} className={tab === item.id ? "selected" : ""} onClick={() => openTab(item.id)}><Icon name={item.icon === "ticket" ? "spark" : item.icon} size={21}/><span>{item.label === "สิทธิ์บริการ" ? "บริการ" : item.label}</span></button>)}</nav>
+      <nav className="mobile-nav">{navItems.slice(0, 2).map((item) => <button key={item.id} className={tab === item.id ? "selected" : ""} onClick={() => openTab(item.id)}><Icon name={item.icon === "ticket" ? "spark" : item.icon} size={21}/><span>{item.label === "หน้าหลัก" ? "หน้าแรก" : item.label}</span></button>)}<button className="mobile-add" onClick={() => tab === "calendar" ? setCalendarAddRequest((current) => current + 1) : category === "รายการที่ต้องซื้อ" ? openShoppingAdd() : openModal(tab === "services" ? "service" : tab === "items" && category === "เอกสาร" ? "note" : "item")} aria-label={tab === "calendar" ? ui("เพิ่มการแจ้งเตือน", "Add reminder") : copy.add}><span>＋</span><b>{language === "en" ? "Add" : "เพิ่ม"}</b></button>{navItems.slice(2).map((item) => <button key={item.id} className={tab === item.id ? "selected" : ""} onClick={() => openTab(item.id)}><Icon name={item.icon === "ticket" ? "spark" : item.icon} size={21}/><span>{item.label === "สิทธิ์บริการ" ? "บริการ" : item.label}</span></button>)}</nav>
     </section>
 
     {selectedEntryId && <section className="detail-page" aria-label={ui("รายละเอียดรายการ", "Record details")}>
@@ -1126,8 +1127,8 @@ export default function Home() {
   </main>;
 }
 
-function CalendarPage({ entries, language, householdId, editTarget, onEditDone, onSave, onUpdate, onDelete, onDeletePast, onOpenEntry }: {
-  entries: Entry[]; language: Language; householdId: string; editTarget?: Entry; onEditDone: () => void;
+function CalendarPage({ entries, language, householdId, editTarget, openRequest, onEditDone, onSave, onUpdate, onDelete, onDeletePast, onOpenEntry }: {
+  entries: Entry[]; language: Language; householdId: string; editTarget?: Entry; openRequest: number; onEditDone: () => void;
   onSave: (entry: Entry) => void; onUpdate: (entry: Entry) => void;
   onDelete: (entry: Entry, occurrenceDate: string) => void; onDeletePast: () => void; onOpenEntry: (id: string, occurrenceDate?: string) => void;
 }) {
@@ -1156,6 +1157,7 @@ function CalendarPage({ entries, language, householdId, editTarget, onEditDone, 
   const [peopleError, setPeopleError] = useState("");
   const [recipientMode, setRecipientMode] = useState<"all" | "selected">("all");
   const [recipientIds, setRecipientIds] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<string[]>([]);
 
   useEffect(() => {
     if (!householdId) { setPeople([]); return; }
@@ -1183,6 +1185,7 @@ function CalendarPage({ entries, language, householdId, editTarget, onEditDone, 
     setRepeatUntil(calendar.recurrence?.until ?? "");
     setRecipientMode(calendar.recipientIds ? "selected" : "all");
     setRecipientIds(calendar.recipientIds ?? []);
+    setPhotos(editTarget.photos ?? (editTarget.photo ? [editTarget.photo] : []));
     setFormError("");
     setShowForm(true);
   }, [editTarget?.id]);
@@ -1207,8 +1210,9 @@ function CalendarPage({ entries, language, householdId, editTarget, onEditDone, 
     onEditDone();
     setName(""); setType("appointment"); setStart(selected); setEnd(""); setDuration("1");
     setDurationUnit("years"); setTime("09:00"); setRemindMinutes("60");
-    setMessage(""); setLinkedEntryId(""); setLocationUrl(""); setRepeatFrequency("none"); setRepeatInterval("1"); setRepeatWeekdays([calendarWeekday(selected)]); setRepeatMonthlyDay("start"); setRepeatUntil(""); setRecipientMode("all"); setRecipientIds([]); setFormError(""); setShowForm(true);
+    setMessage(""); setLinkedEntryId(""); setLocationUrl(""); setRepeatFrequency("none"); setRepeatInterval("1"); setRepeatWeekdays([calendarWeekday(selected)]); setRepeatMonthlyDay("start"); setRepeatUntil(""); setRecipientMode("all"); setRecipientIds([]); setPhotos([]); setFormError(""); setShowForm(true);
   };
+  useEffect(() => { if (openRequest > 0) openNew(); }, [openRequest]);
   const save = (event: React.FormEvent) => {
     event.preventDefault();
     if (!name.trim() || !start) return;
@@ -1242,8 +1246,8 @@ function CalendarPage({ entries, language, householdId, editTarget, onEditDone, 
         excludedBefore: editTarget?.calendar?.recurrence?.excludedBefore,
       } : undefined,
     };
-    if (editTarget) onUpdate({ ...editTarget, name: name.trim(), date: start, calendar });
-    else onSave({ id: crypto.randomUUID(), name: name.trim(), category: "บันทึกแจ้งเตือน", kind: "calendar", date: start, actor: "คุณ", calendar });
+    if (editTarget) onUpdate({ ...editTarget, name: name.trim(), date: start, calendar, photos, photo: photos[0] });
+    else onSave({ id: crypto.randomUUID(), name: name.trim(), category: "บันทึกแจ้งเตือน", kind: "calendar", date: start, actor: "คุณ", calendar, photos, photo: photos[0] });
     setSelected(start);
     setMonth(new Date(`${start}T00:00:00`));
     closeForm();
@@ -1286,6 +1290,7 @@ function CalendarPage({ entries, language, householdId, editTarget, onEditDone, 
       <section className="calendar-recipient-fields"><strong>{ui("ส่งแจ้งเตือนถึง", "Notify")}</strong><div className="calendar-recipient-modes"><button type="button" className={recipientMode === "all" ? "selected" : ""} aria-pressed={recipientMode === "all"} onClick={() => setRecipientMode("all")}>{ui("ทุกคนในบ้าน", "Everyone at home")}</button><button type="button" className={recipientMode === "selected" ? "selected" : ""} aria-pressed={recipientMode === "selected"} onClick={() => setRecipientMode("selected")}>{ui("เลือกเป็นรายคน", "Choose people")}</button></div>{recipientMode === "selected" && <div className="calendar-recipient-list">{people.map((person) => <label key={person.user_id}><input type="checkbox" checked={recipientIds.includes(person.user_id)} onChange={(event) => setRecipientIds((current) => event.target.checked ? [...current, person.user_id] : current.filter((id) => id !== person.user_id))}/><span><strong>{person.display_name || person.email}</strong><small>{person.email}</small></span></label>)}{peopleError && <p role="alert">{peopleError}</p>}{!people.length && !peopleError && <p>{ui("กำลังโหลดสมาชิก...", "Loading members...")}</p>}</div>}</section>
       <div className="form-row"><label className="form-label">{ui("แจ้งเตือนก่อน", "Remind before")}<select value={remindMinutes} onChange={(event) => setRemindMinutes(event.target.value)}><option value="0">{ui("เมื่อถึงเวลา", "At event time")}</option><option value="15">15 {ui("นาที", "minutes")}</option><option value="60">1 {ui("ชั่วโมง", "hour")}</option><option value="1440">1 {ui("วัน", "day")}</option><option value="4320">3 {ui("วัน", "days")}</option><option value="10080">7 {ui("วัน", "days")}</option></select></label><label className="form-label">{ui("เชื่อมกับรายการ", "Linked record")}<select value={linkedEntryId} onChange={(event) => setLinkedEntryId(event.target.value)}><option value="">{ui("ไม่เชื่อม", "None")}</option>{entries.filter((entry) => entry.kind !== "calendar").map((entry) => <option value={entry.id} key={entry.id}>{entry.name}</option>)}</select></label></div>
       <label className="form-label">{ui("ข้อความแจ้งเตือน", "Reminder text")}<input value={message} onChange={(event) => setMessage(event.target.value)} placeholder={ui("เช่น อย่าลืมเตรียมเอกสาร", "e.g. Bring the documents")}/></label>
+      <section className="medicine-photo-field calendar-photo-field"><span className="medicine-photo-label">{ui("รูปประกอบการแจ้งเตือน", "Reminder photos")} <small>{ui("สูงสุด 3 รูป · รูปละไม่เกิน 1 MB", "Up to 3 photos · 1 MB each")}</small></span><div className="medicine-photo-grid">{photos.map((photo, index) => <div className="medicine-photo-preview" key={photo}><img src={photo} alt={ui(`รูปประกอบ ${index + 1}`, `Reminder photo ${index + 1}`)}/><button type="button" className="medicine-photo-remove" aria-label={ui(`ลบรูปที่ ${index + 1}`, `Remove photo ${index + 1}`)} onClick={() => setPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index))}><Icon name="trash" size={14}/></button></div>)}{photos.length < 3 && <label className="medicine-photo-button"><Icon name="camera" size={19}/><span><strong>{ui("ถ่ายหรือเลือกรูป", "Take or choose photos")}</strong><small>{ui("เลือกได้หลายรูป", "Multiple photos allowed")}</small></span><input type="file" accept="image/*" multiple onChange={async (event) => { const input = event.currentTarget; const available = Math.max(0, 3 - photos.length); const files = Array.from(input.files ?? []).slice(0, available); if (!files.length) return; try { const nextPhotos = await Promise.all(files.map(compressPhoto)); setPhotos((current) => [...current, ...nextPhotos].slice(0, 3)); setFormError(""); } catch { setFormError(ui("มีรูปที่ย่อให้เหลือไม่เกิน 1 MB ไม่สำเร็จ", "A photo could not be compressed below 1 MB.")); } finally { input.value = ""; } }}/></label>}</div></section>
       <div className="modal-actions"><button type="button" className="secondary-button" onClick={closeForm}>{ui("ยกเลิก", "Cancel")}</button><button type="submit" className="primary-button">{editTarget ? ui("บันทึกการแก้ไข", "Save changes") : ui("บันทึก", "Save")}</button></div>
     </form></div>, document.body)}
   </section>;
@@ -1302,6 +1307,7 @@ function CalendarDetail({ entry, entries, language, occurrenceDate, onOpenEntry,
     <span className="calendar-detail-kind">{calendar.type === "contract" ? ui("สัญญา", "Contract") : ui("นัดหมาย", "Appointment")}</span>
     {past && <span className="calendar-detail-past">{ui("ผ่านไปแล้ว", "Past appointment")}</span>}
     <h2>{entry.name}</h2>
+    {Boolean(entry.photos?.length || entry.photo) && <div className="calendar-detail-photos">{(entry.photos ?? (entry.photo ? [entry.photo] : [])).map((photo, index) => <img src={photo} alt={ui(`รูปประกอบ ${entry.name} ${index + 1}`, `${entry.name} photo ${index + 1}`)} key={photo}/>)}</div>}
     <dl>
       <div><dt>{ui("วันเริ่มต้น", "Start date")}</dt><dd>{dateLabel(calendar.start, language)}</dd></div>
       {calendar.recurrence && <><div><dt>{ui("วันที่ของครั้งนี้", "This occurrence")}</dt><dd>{dateLabel(occurrenceDate, language)}</dd></div><div><dt>{ui("ทำซ้ำ", "Repeat")}</dt><dd>{recurrenceLabel(calendar.recurrence, language)}</dd></div></>}
