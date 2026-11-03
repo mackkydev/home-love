@@ -30,7 +30,7 @@ async function prepareProfilePhoto(file: File): Promise<Blob> {
   }
 }
 
-export default function SettingsPage({ houses, activeId, defaultHouseholdId, inviteCode, busy, error, language, userId, isAdmin, profilePhotoUrl, userDisplayName, onDisplayNameChange, displaySettings, notificationPreferences, onNotificationPreferenceChange, onPhotoChanged, onMediaPickerStart, onMediaPickerEnd, onOpenAdmin, onOpenHistory, onSwitch, onMakeDefault, onRename, onInvite, onJoin, onSignOut }: {
+export default function SettingsPage({ houses, activeId, defaultHouseholdId, inviteCode, busy, error, language, userId, userEmail, isAdmin, profilePhotoUrl, userDisplayName, onDisplayNameChange, displaySettings, notificationPreferences, onNotificationPreferenceChange, onPhotoChanged, onMediaPickerStart, onMediaPickerEnd, onOpenAdmin, onOpenHistory, onSwitch, onMakeDefault, onRename, onInvite, onJoin, onSignOut }: {
   houses: Household[];
   activeId: string;
   defaultHouseholdId: string;
@@ -39,6 +39,7 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
   error: string;
   language: "th" | "en";
   userId: string;
+  userEmail: string;
   isAdmin: boolean;
   profilePhotoUrl: string;
   userDisplayName: string;
@@ -216,6 +217,7 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
       {userId && <button type="button" className="settings-signout" onClick={onSignOut}><span className="settings-menu-icon">↪</span><span><strong>{en ? "Sign out" : "ออกจากระบบ"}</strong></span><b>›</b></button>}
     </div>}
     {section === "account" && <div className="settings-sections">
+      <section className="settings-card"><h2>{en ? "Account email" : "อีเมลบัญชี"}</h2><p>{en ? "The email currently used to sign in." : "อีเมลที่ใช้เข้าสู่ระบบในปัจจุบัน"}</p><input className="settings-account-email" type="email" value={userEmail} readOnly aria-label={en ? "Account email" : "อีเมลบัญชี"}/></section>
       <section className="settings-card"><h2>{en ? "Display name" : "ชื่อที่แสดง"}</h2><p>{en ? "Shown in your greeting and family profile." : "แสดงบนหน้าแรกและข้อมูลสมาชิกในบ้าน"}</p><form className="household-join-form" onSubmit={(event) => { event.preventDefault(); setProfileNameBusy(true); void onDisplayNameChange(profileName.trim()).then((saved) => setProfileNameMessage(saved ? (en ? "Name saved" : "บันทึกชื่อแล้ว") : (en ? "Could not save name" : "บันทึกชื่อไม่สำเร็จ"))).finally(() => setProfileNameBusy(false)); }}><input value={profileName} onChange={(event) => setProfileName(event.target.value)} maxLength={60} required/><button type="submit" className="primary-button" disabled={profileNameBusy || !profileName.trim()}>{en ? "Save" : "บันทึก"}</button></form>{profileNameMessage && <p role="status">{profileNameMessage}</p>}</section>
       <section className="settings-card"><h2>{en ? "Profile photo" : "รูปโปรไฟล์"}</h2><div className="settings-profile-photo"><span className="settings-avatar">{profilePhotoUrl ? <img src={profilePhotoUrl} alt={en ? "Profile" : "รูปโปรไฟล์"}/> : "ค"}</span><div><strong>{en ? "Your photo" : "รูปของคุณ"}</strong><p>{en ? "Photos are cropped and reduced to under 1 MB." : "รูปจะถูกตัดและย่อให้น้อยกว่า 1 MB"}</p></div></div><div className="settings-button-row"><button type="button" className="secondary-button" disabled={photoBusy} onClick={() => { onMediaPickerStart(); galleryRef.current?.click(); }}>{en ? "Choose photo" : "เลือกรูป"}</button><button type="button" className="secondary-button" disabled={photoBusy} onClick={() => { onMediaPickerStart(); cameraRef.current?.click(); }}>{en ? "Take photo" : "ถ่ายรูป"}</button></div><input ref={galleryRef} className="visually-hidden" type="file" accept="image/*" onChange={(event) => void photoChanged(event)}/><input ref={cameraRef} className="visually-hidden" type="file" accept="image/*" capture="user" onChange={(event) => void photoChanged(event)}/>{photoMessage && <p role="status">{photoMessage}</p>}</section>
       <section className="settings-card"><h2>{en ? "Set or change password" : "ตั้งหรือเปลี่ยนรหัสผ่าน"}</h2><p>{en ? "Use this password to sign in with email." : "ใช้รหัสผ่านนี้เพื่อเข้าสู่ระบบด้วยอีเมล"}</p><form className="household-password-form" onSubmit={(event) => void changePassword(event)}><input type="password" minLength={8} required autoComplete="new-password" placeholder={en ? "New password (8+ characters)" : "รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)"} value={newPassword} onChange={(event) => setNewPassword(event.target.value)}/><input type="password" minLength={8} required autoComplete="new-password" placeholder={en ? "Confirm password" : "ยืนยันรหัสผ่าน"} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)}/><button type="submit" className="primary-button" disabled={passwordBusy}>{en ? "Save password" : "บันทึกรหัสผ่าน"}</button></form>{passwordMessage && <p role="status">{passwordMessage}</p>}</section>

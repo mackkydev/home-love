@@ -522,6 +522,7 @@ body{font-size:16px;line-height:1.5}
 .household-join-form,.household-password-form{display:grid;gap:8px}
 .household-join-form{grid-template-columns:minmax(0,1fr) auto}
 .household-join-form input,.household-password-form input{min-width:0;min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);font-size:16px}
+.settings-account-email{width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-soft);color:var(--ink);font-size:16px}
 .household-password-form .secondary-button{justify-self:start}
 .household-panel-error{margin:0 0 12px;padding:10px;border-radius:9px;background:#fff0f2;color:#b83750;font-size:13px}
 .household-signout{width:100%;padding:11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--muted);font-size:13px;font-weight:700}
