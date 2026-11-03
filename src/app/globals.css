@@ -661,6 +661,21 @@ body{font-size:17px}
 @-webkit-keyframes cloud-spin{from{-webkit-transform:translateZ(0) rotate(0deg)}to{-webkit-transform:translateZ(0) rotate(360deg)}}
 @keyframes cloud-spin{from{transform:translateZ(0) rotate(0deg)}to{transform:translateZ(0) rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.cloud-loading-orbit{-webkit-animation-duration:1.8s;animation-duration:1.8s}}
+
+/* Product master data and purchase flow */
+.entry-title-line{min-width:0;min-height:37px;align-items:center}.entry-title-line>strong{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.entry-for-person{display:flex;align-items:center;gap:5px;margin:7px 0 0;color:var(--muted);font-size:13px}
+.entry-row:has(.entry-for-person) .entry-main{min-width:0}
+.entry-row:has(.entry-for-person) .entry-icon{align-self:flex-start;margin-top:1px}
+.detail-product-profile{max-width:760px;margin:0 auto;padding:18px;border:1px solid var(--line);border-bottom:0;border-radius:16px 16px 0 0;background:var(--surface)}
+.detail-product-profile>div:first-child{display:flex;align-items:center;gap:12px}.detail-product-profile p{display:flex;flex-direction:column;gap:3px;margin:0}.detail-product-profile small{color:var(--muted);font-size:12px}.detail-product-profile strong{font-size:15px}
+.detail-profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}.detail-profile-grid p{padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--canvas)}
+.packaging-form-section{margin:0 0 16px;padding:15px;border:1px solid color-mix(in srgb,var(--blue) 17%,var(--line));border-radius:16px;background:color-mix(in srgb,var(--blue) 4%,var(--surface))}
+.packaging-equation{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 10px}.packaging-form-section>p{margin:1px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.calculated-stock-input[readonly]{background:color-mix(in srgb,var(--blue) 6%,var(--surface));color:var(--blue);font-weight:800}.calculated-stock-note{display:block;margin-top:6px;color:var(--blue);font-size:12px;font-weight:600}
+.shopping-day-total{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:2px 0 12px;padding:13px 15px;border:1px solid color-mix(in srgb,var(--blue) 18%,var(--line));border-radius:14px;background:color-mix(in srgb,var(--blue) 7%,var(--surface))}.shopping-day-total span{font-size:13px;color:var(--muted);font-weight:700}.shopping-day-total strong{font-size:20px;color:var(--blue)}
+.form-label input,.form-label select,.category-select-trigger,.date-picker-trigger{border-color:color-mix(in srgb,var(--ink) 12%,var(--line));box-shadow:0 1px 0 #ffffff80 inset}.form-label input:read-only{cursor:default}
+[data-theme="dark"] .detail-product-profile,[data-theme="dark"] .packaging-form-section{background:#182033;border-color:#303b55}
 @media(max-width:760px){
   .pwa-install-tab{bottom:calc(75px + env(safe-area-inset-bottom));width:calc(100vw - 22px)}
   .app-update-tab{bottom:calc(75px + env(safe-area-inset-bottom));width:calc(100vw - 22px)}
@@ -683,6 +698,15 @@ body{font-size:17px}
   .summary-grid>.summary-card:first-child,.summary-grid .shopping-summary{grid-column:auto}
   .summary-grid .shopping-summary,.summary-grid .service-summary{height:124px}
   .form-label input[type="date"],.form-label input[type="time"]{height:52px;min-height:52px;max-height:52px;box-sizing:border-box;line-height:normal;-webkit-appearance:none;appearance:none}
+  .entry-row:has(.entry-for-person){grid-template-columns:39px minmax(0,1fr)}
+  .entry-row:has(.entry-for-person) .entry-main{grid-column:2/-1}
+  .entry-row:has(.entry-for-person) .entry-actions{grid-column:1/-1}
+  .entry-title-line>strong{font-size:15px}
+  .entry-title-line{min-height:39px}
+  .medicine-summary,.stock-summary,.entry-for-person{font-size:13px;line-height:1.55}
+  .detail-page .entry-row{border-radius:16px 16px 0 0}
+  .detail-product-profile{border-radius:0;padding:16px 14px}.detail-profile-grid{grid-template-columns:minmax(0,1fr);gap:8px}
+  .packaging-equation{grid-template-columns:minmax(0,1fr)}
 }
 @media(max-width:760px){
   .summary-grid>.summary-card,.summary-grid .shopping-summary,.summary-grid .service-summary{height:auto;min-height:104px}
