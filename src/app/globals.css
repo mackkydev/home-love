@@ -1263,10 +1263,7 @@ body{font-size:17px}
 .vault-password-toggle:hover:not(:disabled) { background: var(--canvas); }
 .calendar-detail-card dd { overflow-wrap: anywhere; white-space: pre-wrap; }
 @media (max-width: 760px) {
-  .main-column {
-    --mobile-heading-ink: #05070c;
-    background: var(--canvas);
-  }
+  .main-column { background: var(--canvas); }
   .main-column::before { display: none; }
   .content-area::before {
     content: "";
@@ -1281,11 +1278,10 @@ body{font-size:17px}
   [data-theme="dark"] .content-area::before {
     background: linear-gradient(180deg, #151f35 0%, #243552 36%, color-mix(in srgb, #243552 38%, var(--canvas)) 73%, transparent 100%);
   }
-  [data-theme="dark"] .main-column { --mobile-heading-ink: var(--ink); }
   .content-area .welcome-row :is(h1, p, .eyebrow),
   .content-area .feature-heading :is(h1, p),
   .content-area .settings-page-head :is(h1, span),
-  .content-area .list-category-title :is(strong, small) { color: var(--mobile-heading-ink); }
+  .content-area .list-category-title :is(strong, small) { color: #fff; }
   .calendar-toolbar h2,
   .calendar-toolbar p,
   .list-page > .section-heading h2,
