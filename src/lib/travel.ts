@@ -13,13 +13,10 @@ export type CalendarInfo = {
   recurrence?: CalendarRecurrence;
 };
 
-export type TravelInfo = { kind: "trip" } | {
-  kind: "stop";
-  tripId: string;
+export type TravelInfo = {
   endTime?: string;
   details?: string;
-  contact?: string;
-};
+} & ({ kind: "trip"; startTime?: string } | { kind: "stop"; tripId: string; contact?: string });
 
 export type TravelRecord = {
   id: string;
