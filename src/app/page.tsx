@@ -7,9 +7,12 @@ import CloudAuth from "./CloudAuth";
 import SettingsPage from "./SettingsPage";
 import AdminPanel from "./AdminPanel";
 import PinLock from "./PinLock";
+import TravelPage from "./TravelPage";
+import PasswordVault from "./PasswordVault";
+import { currentTravelEntries, isInTrip, travelSelection, type CalendarInfo, type TravelInfo, type TravelRecord, type TravelSelection } from "@/lib/travel";
 import { calendarOccursOn, calendarOccurrenceDates, calendarWeekday, calendarDateAtOrBefore, calendarHasPastOccurrence, calendarSeriesFinished, type CalendarRecurrence } from "@/lib/calendar-recurrence";
 
-type Tab = "home" | "items" | "services" | "calendar" | "history" | "settings";
+type Tab = "home" | "items" | "services" | "calendar" | "travel" | "vault" | "history" | "settings";
 type AppTheme = "light" | "dark" | "system";
 type Accent = "blue" | "violet" | "green" | "rose" | "pink" | "gray" | "gold" | "custom";
 type PaletteMode = "normal" | "pastel";
@@ -27,7 +30,6 @@ function purchaseHistory(entry: Entry): Purchase[] {
   // Older records did not store a quantity. Keep their purchase visible without inventing one.
   return entry.price != null ? [{ id: `original-${entry.id}`, date: entry.date, store: entry.store ?? "", price: entry.price, quantity: 0 }] : [];
 }
-type CalendarInfo = { type: "appointment" | "contract"; start: string; end?: string; time: string; remindMinutes: number; message: string; linkedEntryId?: string; locationUrl?: string; recipientIds?: string[]; recurrence?: CalendarRecurrence };
 type InAppAlert = { key: string; entryId: string; occurrenceDate?: string; kind: "stock" | "medicine" | "appointment" | "contract" | "shopping"; title: string; body: string; occurredAt: number };
 type Entry = {
   id: string;
@@ -57,6 +59,7 @@ type Entry = {
   serviceAuto?: ServiceAutoUse;
   purchases?: Purchase[];
   calendar?: CalendarInfo;
+  travel?: TravelInfo;
   shopping?: ShoppingInfo;
   packaging?: PackagingInfo;
 };
@@ -104,7 +107,7 @@ function scheduledAlerts(entries: Entry[], nowMs: number, language: Language, us
   const dateAt = (offsetDays: number) => localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays));
   const oldest = nowMs - 14 * 86_400_000;
   const result: InAppAlert[] = [];
-  for (const entry of entries) {
+  for (const entry of currentTravelEntries(entries)) {
     for (const reminder of entry.medicine?.reminders ?? []) {
       if (entry.medicine?.recipientIds && !entry.medicine.recipientIds.includes(userId)) continue;
       if (!/^\d{2}:\d{2}$/.test(reminder.time)) continue;
@@ -122,7 +125,7 @@ function scheduledAlerts(entries: Entry[], nowMs: number, language: Language, us
     for (const date of dates) {
       const occurredAt = new Date(`${date}T${event.time || "09:00"}:00`).getTime() - Math.max(0, event.remindMinutes || 0) * 60_000;
       if (!Number.isFinite(occurredAt) || occurredAt < oldest || occurredAt > nowMs) continue;
-      result.push({ key: `${entry.id}:calendar:${date}:${event.time}`, entryId: entry.id, occurrenceDate: date, kind: event.type, title: entry.name, body: event.message || (event.type === "contract" ? language === "en" ? "Contract ending" : "สัญญากำลังสิ้นสุด" : language === "en" ? "Appointment reminder" : "แจ้งเตือนนัดหมาย"), occurredAt });
+      result.push({ key: `${entry.id}:calendar:${date}:${event.time}`, entryId: entry.id, occurrenceDate: date, kind: event.type, title: entry.name, body: event.message || (entry.travel ? language === "en" ? "Travel reminder" : "แจ้งเตือนแผนเดินทาง" : event.type === "contract" ? language === "en" ? "Contract ending" : "สัญญากำลังสิ้นสุด" : language === "en" ? "Appointment reminder" : "แจ้งเตือนนัดหมาย"), occurredAt });
     }
   }
   return result;
@@ -172,6 +175,9 @@ function RecordFormHeading({ icon, title, description }: { icon: string; title: 
 function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true as const };
   const paths: Record<string, React.ReactNode> = {
+    luggage: <><rect x="5" y="7" width="14" height="13" rx="2"/><path d="M9 7V4h6v3M9 11v5m6-5v5M8 20v1m8-1v1"/></>,
+    lock: <><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></>,
+
     camera: <><path d="M14 5h-4l-2 3H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-3l-2-3Z"/><circle cx="12" cy="13" r="3.5"/></>,
     home: <><path d="m3 10 9-7 9 7"/><path d="M5 9v12h14V9M9 21v-7h6v7"/></>, grid: <><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></>, plus: <><path d="M12 8v8m-4-4h8"/><circle cx="12" cy="12" r="9"/></>, spark: <><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z"/><path d="m19 15 .9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15Z"/></>, file: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8m-8 4h8"/></>, bag: <><path d="M5 8h14l1 13H4L5 8Z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></>, clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>, settings: <><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></>, search: <><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></>, bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9m-8 12h4"/></>, chevron: <path d="m9 18 6-6-6-6"/>, arrow: <><path d="M5 12h14m-6-6 6 6-6 6"/></>, check: <path d="m5 12 4 4L19 6"/>, close: <path d="m18 6-12 12M6 6l12 12"/>, cart: <><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/><path d="M2 3h2l2.7 12.4a2 2 0 0 0 2 1.6h8.8a2 2 0 0 0 2-1.6L21 8H5"/></>, user: <><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>, calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></>, wallet: <><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 9h18m-5 5h2"/></>, edit: <><path d="m4 16-.8 4.8L8 20l11.5-11.5a2.1 2.1 0 0 0-3-3L5 17"/><path d="m14.5 6.5 3 3"/></>, trash: <><path d="M3 6h18m-2 0-.9 14H5L4 6m4 0V4h8v2m-6 4v6m4-6v6"/></>, download: <><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></>, menu: <><path d="M4 6h16M4 12h16M4 18h16"/></>, heart: <path d="M20.8 8.7c0 4.2-8.8 10-8.8 10s-8.8-5.8-8.8-10a4.6 4.6 0 0 1 8.8-1.5 4.6 4.6 0 0 1 8.8 1.5Z"/>, shield: <><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></>, dots: <><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>, tag: <><path d="M20 13 13 20 3 10V4h6l11 9Z"/><circle cx="7.5" cy="7.5" r=".8"/></>, receipt: <><path d="M4 3h16v18l-4-2-4 2-4-2-4 2V3Z"/><path d="M8 8h8m-8 4h8m-8 4h4"/></>, package: <><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="M3 8v9l9 5 9-5V8m-9 5v9"/></>
   };
@@ -280,6 +286,9 @@ async function withHouseholdTimeout<T>(task: Promise<T>): Promise<T> {
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("home");
+  const [showMore, setShowMore] = useState(false);
+  const [travelTarget, setTravelTarget] = useState<TravelSelection | null>(null);
+  const [calendarFocusDate, setCalendarFocusDate] = useState<string | null>(null);
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
   const [ready, setReady] = useState(false);
   const [authStatus, setAuthStatus] = useState<"checking" | "signed-out" | "signed-in">(cloudEnabled ? "checking" : "signed-in");
@@ -894,6 +903,7 @@ export default function Home() {
   };
   const removeEntry = (entry: Entry) => setDeleteTarget(entry);
   const removeCalendarOccurrence = (entry: Entry, date: string) => {
+    if (entry.travel) return;
     if (entry.calendar?.recurrence) setDeleteOccurrenceTarget({ entry, date });
     else removeEntry(entry);
   };
@@ -915,9 +925,9 @@ export default function Home() {
   const confirmRemovePastAppointments = () => {
     const currentDay = today();
     const tomorrow = new Date(Date.parse(`${currentDay}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-    const pastIds = new Set(entries.filter((entry) => isPastAppointment(entry)).map((entry) => entry.id));
+    const pastIds = new Set(entries.filter((entry) => !entry.travel && isPastAppointment(entry)).map((entry) => entry.id));
     setEntries((current) => current.filter((entry) => !pastIds.has(entry.id)).map((entry) => {
-      if (entry.calendar?.type !== "appointment" || !entry.calendar.recurrence || !calendarHasPastOccurrence(entry.calendar)) return entry;
+      if (entry.travel || entry.calendar?.type !== "appointment" || !entry.calendar.recurrence || !calendarHasPastOccurrence(entry.calendar)) return entry;
       const cutoff = calendarOccursOn(entry.calendar, currentDay) && isPastOccurrence(entry, currentDay) ? tomorrow : currentDay;
       return { ...entry, calendar: { ...entry.calendar, recurrence: { ...entry.calendar.recurrence, excludedBefore: cutoff } } };
     }));
@@ -1083,7 +1093,14 @@ export default function Home() {
     if (error) { setNotice(ui("บันทึกการตั้งค่าแจ้งเตือนไม่สำเร็จ", "Could not save notification settings")); return; }
     setNotificationPreferences(next);
   };
-  const navItems: { id: Tab; label: string; icon: string }[] = [{ id: "home", label: copy.home, icon: "home" }, { id: "items", label: copy.items, icon: "bag" }, { id: "services", label: copy.services, icon: "ticket" }, { id: "settings", label: ui("ตั้งค่า", "Settings"), icon: "settings" }];
+  const navItems: { id: Tab; label: string; icon: string }[] = [
+    { id: "home", label: copy.home, icon: "home" },
+    { id: "items", label: copy.items, icon: "bag" },
+    { id: "services", label: copy.services, icon: "spark" },
+    { id: "travel", label: ui("วางแผนเดินทาง", "Travel planner"), icon: "luggage" },
+    { id: "vault", label: ui("คลังรหัสผ่าน", "Password vault"), icon: "lock" },
+    { id: "settings", label: ui("ตั้งค่า", "Settings"), icon: "settings" },
+  ];
   const shoppingEntries = filteredEntries.filter((entry) => entry.kind === "shopping" && (shoppingView === "completed" ? Boolean(entry.shopping?.completedAt) : !entry.shopping?.completedAt) && (shoppingView !== "completed" || (!shoppingHistoryDate || entry.shopping?.completedAt === shoppingHistoryDate) && `${entry.name} ${entry.note ?? ""} ${(entry.purchases ?? []).map((purchase) => `${purchase.store} ${purchase.unit}`).join(" ")}`.toLocaleLowerCase().includes(shoppingHistorySearch.trim().toLocaleLowerCase())));
   const displayEntries = category === "รายการที่ต้องซื้อ" ? shoppingEntries : search.trim() ? filteredEntries : tab === "services" ? filteredEntries.filter((entry) => entry.kind === "service") : tab === "items" ? filteredEntries.filter((entry) => entry.kind === "item" || entry.kind === "note" || entry.kind === "shopping") : tab === "history" ? filteredEntries : [];
   const activeCategory = [...categories, ...extraCategories].find((item) => item.name === category) ?? categories[0];
@@ -1095,7 +1112,37 @@ export default function Home() {
   const formCalculatedStock = packagingStockAmount(purchaseTargetEntry, Number(form.purchaseQuantity), form.purchaseUnit);
   const selectedPurchaseTotal = shoppingHistoryDate ? shoppingEntries.reduce((sum, entry) => sum + (entry.purchases?.[0]?.price ?? 0), 0) : 0;
   const openCategory = (name: string) => { setSearch(""); setEndingSoon(false); if (name === "รายการที่ต้องซื้อ") { setShoppingView("pending"); setShoppingHistorySearch(""); setShoppingHistoryDate(""); } setCategory(name); setTab(name === "บันทึกแจ้งเตือน" ? "calendar" : name === "บริการ" ? "services" : "items"); };
-  const openTab = (next: Tab) => { setSearch(""); setEndingSoon(false); setCategory(next === "services" ? "บริการ" : "ทั้งหมด"); setTab(next); };
+  const openTab = (next: Tab) => {
+    setShowMore(false);
+    setSearch("");
+    setEndingSoon(false);
+    setCategory(next === "services" ? "บริการ" : "ทั้งหมด");
+    if (next !== "calendar") { setCalendarFocusDate(null); setCalendarAddRequest(0); }
+    setTab(next);
+  };
+  const openTravelFromCalendar = (entry: Entry, occurrence?: string) => {
+    setTravelTarget(travelSelection(entry, occurrence));
+    openTab("travel");
+    closeDetail();
+  };
+  const openTravelCalendar = (date: string) => {
+    setCalendarFocusDate(date);
+    setCalendarAddRequest(0);
+    openTab("calendar");
+  };
+  const saveTravelRecord = (record: TravelRecord) => {
+    const travel = record.travel;
+    setEntries((current) => {
+      if (travel.kind === "stop" && !isInTrip(record.date, current.find((entry) => entry.id === travel.tripId && entry.travel?.kind === "trip")?.calendar)) return current;
+      return current.some((entry) => entry.id === record.id)
+        ? current.map((entry) => entry.id === record.id ? record : entry)
+        : [record, ...current];
+    });
+  };
+  const removeTravelRecord = (record: TravelRecord) => {
+    setEntries((current) => current.filter((entry) => entry.id !== record.id
+      && !(record.travel.kind === "trip" && entry.travel?.kind === "stop" && entry.travel.tripId === record.id)));
+  };
   const openCurrentForm = () => {
     if (tab === "calendar") setCalendarAddRequest((current) => current + 1);
     else if (category === "รายการที่ต้องซื้อ") openShoppingAdd();
@@ -1125,7 +1172,7 @@ export default function Home() {
 
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId);
   const calendarEditTarget = entries.find((entry) => entry.id === calendarEditId);
-  const pastAppointmentCount = entries.filter((entry) => entry.calendar?.type === "appointment" && calendarHasPastOccurrence(entry.calendar)).length;
+  const pastAppointmentCount = entries.filter((entry) => !entry.travel && entry.calendar?.type === "appointment" && calendarHasPastOccurrence(entry.calendar)).length;
   return <main className={`app-shell ${tab !== "home" && tab !== "settings" ? "is-list-view" : ""} ${tab === "calendar" ? "is-calendar-view" : ""}`}>
     <aside className="sidebar">
       <a className="brand" href="#home" onClick={() => openTab("home")}><span className="brand-mark"><Icon name="home" size={21}/></span><span><strong>บ้านของเรา</strong><small>HOME ORGANIZER</small></span></a>
@@ -1146,10 +1193,16 @@ export default function Home() {
       {appUpdateReady && <aside className="app-update-tab" role="status"><span className="app-update-icon"><Icon name="download" size={22}/></span><span className="app-update-copy"><strong>{ui("มีแอปเวอร์ชันใหม่", "A new app version is ready")}</strong><small>{ui("กดอัปเดตได้ทันที โดยไม่ต้องปิดแอป", "Update now without closing the app")}</small></span><button type="button" onClick={applyAppUpdate}>{ui("อัปเดตตอนนี้", "Update now")}</button></aside>}
 
       <div className="content-area">
-        {tab === "settings" ? <SettingsPage houses={households} activeId={householdId} defaultHouseholdId={defaultHouseholdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} userEmail={userEmail} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} userDisplayName={userDisplayName} onDisplayNameChange={async (name) => { if (!cloud) return false; const { error } = await cloud.auth.updateUser({ data: { full_name: name } }); if (error) return false; setUserDisplayName(name); return true; }} displaySettings={displaySettings} notificationPreferences={notificationPreferences} onNotificationPreferenceChange={(name, enabled) => void changeNotificationPreference(name, enabled)} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onMakeDefault={(id) => void makeDefaultHousehold(id)} onRename={(id, name) => renameCurrentHousehold(id, name)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => void signOut()}/> : <>
+        {tab === "travel" ? <TravelPage key={householdId} entries={entries} language={language} today={todayValue} selection={travelTarget} onSelect={setTravelTarget}
+          onSave={saveTravelRecord} onRemove={removeTravelRecord} onCalendar={openTravelCalendar} compressPhoto={compressPhoto}/>
+        : tab === "vault" ? <PasswordVault key={loadedUser.current || "local"} scope={loadedUser.current || "local"} language={language}/>
+        : tab === "settings" ? <SettingsPage houses={households} activeId={householdId} defaultHouseholdId={defaultHouseholdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} userEmail={userEmail} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} userDisplayName={userDisplayName} onDisplayNameChange={async (name) => { if (!cloud) return false; const { error } = await cloud.auth.updateUser({ data: { full_name: name } }); if (error) return false; setUserDisplayName(name); return true; }} displaySettings={displaySettings} notificationPreferences={notificationPreferences} onNotificationPreferenceChange={(name, enabled) => void changeNotificationPreference(name, enabled)} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onMakeDefault={(id) => void makeDefaultHousehold(id)} onRename={(id, name) => renameCurrentHousehold(id, name)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => void signOut()}/> : <>
         {(tab === "home" || tab === "calendar") && <section className="welcome-row"><div><div className="eyebrow"><span className="greeting-time-icon" aria-hidden="true">{greetingIcon}</span> {headerDate}</div>{tab === "home" ? <div className="welcome-heading-line"><h1>{ui("สวัสดี", "Hello")} {userDisplayName || ui("คุณ", "you")}</h1><p>{copy.intro}</p></div> : <><h1>{ui("บันทึกแจ้งเตือน", "Calendar")}</h1><p>{ui("บันทึกและจัดการแจ้งเตือนในบ้าน", "Manage household reminders")}</p></>}</div><button className="primary-button desktop-add" onClick={openCurrentForm}><span>＋</span> {tab === "calendar" ? ui("เพิ่มการแจ้งเตือน", "Add reminder") : copy.add}</button></section>}
 
-        {tab === "calendar" ? <CalendarPage entries={entries} language={language} householdId={householdId} editTarget={calendarEditTarget} openRequest={calendarAddRequest} onEditDone={() => setCalendarEditId(null)} onSave={(entry) => setEntries((previous) => [entry, ...previous])} onUpdate={(updated) => setEntries((previous) => previous.map((entry) => entry.id === updated.id ? updated : entry))} onDelete={removeCalendarOccurrence} onDeletePast={() => setDeletePastAppointmentsOpen(true)} onOpenEntry={openDetail}/> : tab === "home" ? <>
+        {tab === "calendar" ? <CalendarPage key={calendarFocusDate ?? "calendar"} focusDate={calendarFocusDate} entries={entries} language={language} householdId={householdId} editTarget={calendarEditTarget} openRequest={calendarAddRequest} onEditDone={() => setCalendarEditId(null)} onSave={(entry) => setEntries((previous) => [entry, ...previous])} onUpdate={(updated) => setEntries((previous) => previous.map((entry) => entry.id === updated.id ? updated : entry))} onDelete={removeCalendarOccurrence} onDeletePast={() => setDeletePastAppointmentsOpen(true)} onOpenEntry={openDetail}/> : tab === "home" ? <>
+          <nav className="feature-shortcuts" aria-label={ui("เครื่องมือในบ้าน", "Household tools")}>
+            {navItems.slice(3, 5).map((item) => <button type="button" key={item.id} onClick={() => openTab(item.id)}><span><Icon name={item.icon} size={19}/></span><strong>{item.label}</strong><Icon name="chevron" size={16}/></button>)}
+          </nav>
           <div className="home-priorities">
             <HomePriorityPanel tone="shopping" icon="cart" title={ui("รายการที่ต้องซื้อวันนี้", "Buy today")}
               description={ui("ครบกำหนดวันนี้และรายการที่เลยกำหนด", "Due today and overdue")}
@@ -1205,12 +1258,23 @@ export default function Home() {
       </div>
       {showInstallBanner && <aside className="pwa-install-tab" aria-label={ui("ติดตั้งแอป", "Install app")}><span className="pwa-install-icon"><Icon name="download" size={23}/></span><span className="pwa-install-copy"><strong>{language === "th" ? "ติดตั้ง (Install)" : "Install"}</strong><small>{installPlatform === "ios" ? ui("เพิ่มไว้บนหน้าจอโฮมของ iPhone หรือ iPad", "Add to your iPhone or iPad Home Screen") : ui("เปิดใช้งานแบบแอปเต็มหน้าจอ", "Use it like a full-screen app")}</small></span><button type="button" className="pwa-install-button" onClick={() => void installPwa()}>{ui("ติดตั้ง", "Install")}</button><button type="button" className="pwa-install-close" aria-label={ui("ซ่อนแถบติดตั้ง", "Hide install prompt")} onClick={dismissInstallBanner}><Icon name="close" size={15}/></button></aside>}
       {showInstallGuide && <div className="modal-backdrop pwa-install-guide-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowInstallGuide(false); }}><section className="pwa-install-guide" role="dialog" aria-modal="true" aria-labelledby="pwa-install-title"><button type="button" className="icon-button pwa-guide-close" aria-label={ui("ปิด", "Close")} onClick={() => setShowInstallGuide(false)}><Icon name="close" size={18}/></button><span className="pwa-guide-icon"><Icon name="download" size={28}/></span><h2 id="pwa-install-title">{installPlatform === "ios" ? ui("ติดตั้งบน iPhone หรือ iPad", "Install on iPhone or iPad") : ui("ติดตั้งบน Android", "Install on Android")}</h2><p>{ui("ติดตั้งแล้วจะเปิดจากหน้าจอโฮม ใช้งานเต็มจอ และให้ความรู้สึกเหมือนแอป", "Open it from your Home Screen in a full-screen app experience.")}</p>{installPlatform === "ios" ? <ol><li>{ui("เปิดหน้านี้ด้วย Safari", "Open this page in Safari.")}</li><li>{ui("แตะปุ่ม แชร์ ที่แถบเครื่องมือ", "Tap the Share button in the toolbar.")}</li><li>{ui("เลือก เพิ่มไปยังหน้าจอโฮม", "Choose Add to Home Screen.")}</li><li>{ui("แตะ เพิ่ม เพื่อยืนยัน", "Tap Add to confirm.")}</li></ol> : <ol><li>{ui("แตะเมนู ⋮ ของเบราว์เซอร์", "Tap the browser menu ⋮.")}</li><li>{ui("เลือก ติดตั้งแอป หรือ เพิ่มไปยังหน้าจอหลัก", "Choose Install app or Add to Home screen.")}</li><li>{ui("แตะ ติดตั้ง เพื่อยืนยัน", "Tap Install to confirm.")}</li></ol>}<button type="button" className="primary-button pwa-guide-done" onClick={() => setShowInstallGuide(false)}>{ui("เข้าใจแล้ว", "Got it")}</button></section></div>}
-      <nav className="mobile-nav">{navItems.slice(0, 2).map((item) => <button key={item.id} className={tab === item.id ? "selected" : ""} onClick={() => openTab(item.id)}><Icon name={item.icon === "ticket" ? "spark" : item.icon} size={21}/><span>{item.label === "หน้าหลัก" ? "หน้าแรก" : item.label}</span></button>)}<button className="mobile-add" onClick={openCurrentForm} aria-label={tab === "calendar" ? ui("เพิ่มการแจ้งเตือน", "Add reminder") : copy.add}><span>＋</span><b>{language === "en" ? "Add" : "เพิ่ม"}</b></button>{navItems.slice(2).map((item) => <button key={item.id} className={tab === item.id ? "selected" : ""} onClick={() => openTab(item.id)}><Icon name={item.icon === "ticket" ? "spark" : item.icon} size={21}/><span>{item.label === "สิทธิ์บริการ" ? "บริการ" : item.label}</span></button>)}</nav>
+      {showMore && <div className="mobile-more-layer">
+        <button type="button" className="mobile-more-backdrop" onClick={() => setShowMore(false)} aria-label={ui("ปิดเมนูเพิ่มเติม", "Close more menu")}/>
+        <nav id="mobile-more-menu" className="mobile-more-menu" aria-label={ui("เมนูเพิ่มเติม", "More menu")}>
+          {[...navItems.slice(3, 5), { id: "calendar" as const, label: ui("ปฏิทิน", "Calendar"), icon: "calendar" }, navItems[5]].map((item) => <button type="button" key={item.id} onClick={() => openTab(item.id)}><Icon name={item.icon} size={20}/>{item.label}</button>)}
+        </nav>
+      </div>}
+      <nav className="mobile-nav">
+        {navItems.slice(0, 2).map((item) => <button type="button" key={item.id} className={tab === item.id ? "selected" : ""} onClick={() => openTab(item.id)}><Icon name={item.icon} size={21}/><span>{item.id === "home" ? ui("หน้าแรก", "Home") : item.label}</span></button>)}
+        {tab !== "travel" && tab !== "vault" && <button type="button" className="mobile-add" onClick={openCurrentForm} aria-label={tab === "calendar" ? ui("เพิ่มการแจ้งเตือน", "Add reminder") : copy.add}><span>＋</span><b>{ui("เพิ่ม", "Add")}</b></button>}
+        <button type="button" className={tab === "services" ? "selected" : ""} onClick={() => openTab("services")}><Icon name="spark" size={21}/><span>{ui("บริการ", "Services")}</span></button>
+        <button type="button" className={showMore || ["travel", "vault", "calendar", "settings"].includes(tab) ? "selected" : ""} aria-expanded={showMore} aria-controls={showMore ? "mobile-more-menu" : undefined} onClick={() => setShowMore((current) => !current)}><Icon name="dots" size={21}/><span>{ui("เพิ่มเติม", "More")}</span></button>
+      </nav>
     </section>
 
     {selectedEntryId && <section className="detail-page" aria-label={ui("รายละเอียดรายการ", "Record details")}>
       <header className="detail-page-header"><button type="button" className="detail-back-button" onClick={closeDetail} aria-label={ui("กลับ", "Back")}><Icon name="chevron" size={20}/></button><div><small>{ui("รายละเอียดรายการ", "Record details")}</small><strong>{selectedEntry?.name ?? ui("ไม่พบรายการ", "Record not found")}</strong></div></header>
-      <div className="detail-page-body">{selectedEntry ? <>{selectedEntry.kind === "calendar" && selectedEntry.calendar ? <CalendarDetail entry={selectedEntry} entries={entries} language={language} occurrenceDate={selectedOccurrenceDate ?? selectedEntry.calendar.start} onOpenEntry={openDetail} onEdit={() => { if (!isPastOccurrence(selectedEntry, selectedOccurrenceDate ?? selectedEntry.calendar!.start)) { setCalendarEditId(selectedEntry.id); closeDetail(); } }} onDelete={() => removeCalendarOccurrence(selectedEntry, selectedOccurrenceDate ?? selectedEntry.calendar!.start)}/> : selectedEntry.kind === "shopping" ? <ShoppingRow entry={selectedEntry} language={language} detailMode onOpen={() => {}} onBuy={() => openShoppingBuy(selectedEntry)} onRemove={() => removeEntry(selectedEntry)}/> : <EntryRow entry={selectedEntry} language={language} detailMode onDeletePhoto={(index) => setPhotoDeleteTarget({ kind: "entry", entryId: selectedEntry.id, index })} onConsume={() => consumed(selectedEntry)} onStockUse={() => recordStockUse(selectedEntry)} onEdit={() => editEntry(selectedEntry)} onRenew={() => renewService(selectedEntry)} onAddToShopping={() => addToShopping(selectedEntry)} onBuyAgain={() => buyAgain(selectedEntry)} onRemove={() => removeEntry(selectedEntry)} onProgressStyle={(style) => setEntries((prev) => prev.map((entry) => entry.id === selectedEntry.id ? { ...entry, progressStyle: style } : entry))}/>}{Boolean(selectedEntry.medicine?.reminders?.length) && <section className="purchase-history"><div className="section-heading"><h2>{ui("เวลาแจ้งเตือน", "Reminder times")}</h2></div>{selectedEntry.medicine?.reminders?.map((reminder) => <div className="purchase-history-row" key={reminder.meal}><span>{reminder.meal} · {reminder.message || `${ui("ถึงเวลากิน", "Time for")} ${selectedEntry.name}`}</span><strong>{reminder.time}</strong></div>)}</section>}{selectedEntry.kind === "item" && !isFinanceRecord(selectedEntry) && <PurchaseHistory entry={selectedEntry} language={language} onAddToShopping={() => addToShopping(selectedEntry)} onBuyAgain={() => buyAgain(selectedEntry)}/>}</> : <div className="empty-state"><strong>{ui("ไม่พบรายการนี้", "Record not found")}</strong><button type="button" className="primary-button" onClick={closeDetail}>{ui("กลับ", "Back")}</button></div>}</div>
+      <div className="detail-page-body">{selectedEntry ? <>{selectedEntry.kind === "calendar" && selectedEntry.calendar ? <CalendarDetail entry={selectedEntry} entries={entries} language={language} occurrenceDate={selectedOccurrenceDate ?? selectedEntry.calendar.start} onOpenEntry={openDetail} onOpenTravel={() => openTravelFromCalendar(selectedEntry, selectedOccurrenceDate ?? undefined)} onEdit={() => { if (!isPastOccurrence(selectedEntry, selectedOccurrenceDate ?? selectedEntry.calendar!.start)) { setCalendarEditId(selectedEntry.id); closeDetail(); } }} onDelete={() => removeCalendarOccurrence(selectedEntry, selectedOccurrenceDate ?? selectedEntry.calendar!.start)}/> : selectedEntry.kind === "shopping" ? <ShoppingRow entry={selectedEntry} language={language} detailMode onOpen={() => {}} onBuy={() => openShoppingBuy(selectedEntry)} onRemove={() => removeEntry(selectedEntry)}/> : <EntryRow entry={selectedEntry} language={language} detailMode onDeletePhoto={(index) => setPhotoDeleteTarget({ kind: "entry", entryId: selectedEntry.id, index })} onConsume={() => consumed(selectedEntry)} onStockUse={() => recordStockUse(selectedEntry)} onEdit={() => editEntry(selectedEntry)} onRenew={() => renewService(selectedEntry)} onAddToShopping={() => addToShopping(selectedEntry)} onBuyAgain={() => buyAgain(selectedEntry)} onRemove={() => removeEntry(selectedEntry)} onProgressStyle={(style) => setEntries((prev) => prev.map((entry) => entry.id === selectedEntry.id ? { ...entry, progressStyle: style } : entry))}/>}{Boolean(selectedEntry.medicine?.reminders?.length) && <section className="purchase-history"><div className="section-heading"><h2>{ui("เวลาแจ้งเตือน", "Reminder times")}</h2></div>{selectedEntry.medicine?.reminders?.map((reminder) => <div className="purchase-history-row" key={reminder.meal}><span>{reminder.meal} · {reminder.message || `${ui("ถึงเวลากิน", "Time for")} ${selectedEntry.name}`}</span><strong>{reminder.time}</strong></div>)}</section>}{selectedEntry.kind === "item" && !isFinanceRecord(selectedEntry) && <PurchaseHistory entry={selectedEntry} language={language} onAddToShopping={() => addToShopping(selectedEntry)} onBuyAgain={() => buyAgain(selectedEntry)}/>}</> : <div className="empty-state"><strong>{ui("ไม่พบรายการนี้", "Record not found")}</strong><button type="button" className="primary-button" onClick={closeDetail}>{ui("กลับ", "Back")}</button></div>}</div>
     </section>}
 
     {cloudEnabled && appAdmin && showAdmin && <AdminPanel language={language} onClose={() => setShowAdmin(false)}/>}
@@ -1316,14 +1380,14 @@ export default function Home() {
   </main>;
 }
 
-function CalendarPage({ entries, language, householdId, editTarget, openRequest, onEditDone, onSave, onUpdate, onDelete, onDeletePast, onOpenEntry }: {
-  entries: Entry[]; language: Language; householdId: string; editTarget?: Entry; openRequest: number; onEditDone: () => void;
+function CalendarPage({ entries, language, householdId, focusDate, editTarget, openRequest, onEditDone, onSave, onUpdate, onDelete, onDeletePast, onOpenEntry }: {
+  entries: Entry[]; language: Language; householdId: string; focusDate: string | null; editTarget?: Entry; openRequest: number; onEditDone: () => void;
   onSave: (entry: Entry) => void; onUpdate: (entry: Entry) => void;
   onDelete: (entry: Entry, occurrenceDate: string) => void; onDeletePast: () => void; onOpenEntry: (id: string, occurrenceDate?: string) => void;
 }) {
   const ui = (th: string, en: string) => language === "en" ? en : th;
-  const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-  const [selected, setSelected] = useState(today());
+  const [month, setMonth] = useState(() => new Date(`${(focusDate ?? today()).slice(0, 7)}-01T00:00:00`));
+  const [selected, setSelected] = useState(() => focusDate ?? today());
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState<"appointment" | "contract">("appointment");
@@ -1382,8 +1446,8 @@ function CalendarPage({ entries, language, householdId, editTarget, openRequest,
   const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   const firstWeekday = (new Date(month.getFullYear(), month.getMonth(), 1).getDay() + 6) % 7;
   const iso = (day: number) => `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-  const calendarEntries = entries.filter((entry) => entry.kind === "calendar" && entry.calendar);
-  const pastAppointments = calendarEntries.filter((entry) => entry.calendar?.type === "appointment" && calendarHasPastOccurrence(entry.calendar));
+  const calendarEntries = currentTravelEntries(entries).filter((entry) => entry.kind === "calendar" && entry.calendar);
+  const pastAppointments = calendarEntries.filter((entry) => !entry.travel && entry.calendar?.type === "appointment" && calendarHasPastOccurrence(entry.calendar));
   const dayEntries = calendarEntries.filter((entry) => calendarEntryOccursOn(entry, selected)).sort((a, b) => (a.calendar?.time ?? "").localeCompare(b.calendar?.time ?? ""));
   const calculatedEnd = (() => {
     if (!start || !Number(duration)) return "";
@@ -1460,7 +1524,26 @@ function CalendarPage({ entries, language, householdId, editTarget, openRequest,
         </div>
       </section>
       <section className="calendar-agenda"><h3>{dateLabel(selected, language)}</h3>
-        {dayEntries.length ? dayEntries.map((entry) => <article className={`calendar-event ${isPastOccurrence(entry, selected) ? "past" : ""}`} key={entry.id}><button type="button" className="calendar-event-open" onClick={() => onOpenEntry(entry.id, selected)} aria-label={`${ui("ดูรายละเอียด", "View details")}: ${entry.name}`}><span className="calendar-event-icon"><Icon name={entry.calendar?.type === "contract" ? "file" : "calendar"} size={19}/></span><div><strong>{entry.name}</strong><small>{entry.calendar?.type === "contract" ? ui("สัญญา", "Contract") : ui("นัดหมาย", "Appointment")} · {entry.calendar?.time}{entry.calendar?.end && ` · ${ui("สิ้นสุด", "Ends")} ${dateLabel(entry.calendar.end, language)}`}</small>{entry.calendar?.recurrence && <small>{recurrenceLabel(entry.calendar.recurrence, language)}</small>}{isPastOccurrence(entry, selected) && <small>{ui("ผ่านไปแล้ว", "Past appointment")}</small>}{entry.calendar?.message && <small>{entry.calendar.message}</small>}</div><span className="calendar-event-chevron" aria-hidden="true">›</span></button><button className="row-icon-button delete-icon-button" type="button" onClick={() => onDelete(entry, selected)} aria-label={ui("ลบรายการ", "Delete event")}><Icon name="trash" size={17}/></button></article>) : <p className="calendar-empty-day">{ui("วันนี้ยังไม่มีรายการ", "No events for this day")}</p>}
+        {dayEntries.length ? dayEntries.map((entry) => {
+          const past = isPastOccurrence(entry, selected);
+          const stop = entry.travel?.kind === "stop" ? entry.travel : undefined;
+          const label = entry.travel?.kind === "trip" ? ui("วันเดินทาง", "Trip day") : stop ? ui("จุดแวะ", "Trip stop")
+            : entry.calendar?.type === "contract" ? ui("สัญญา", "Contract") : ui("นัดหมาย", "Appointment");
+          return <article className={`calendar-event ${past ? "past" : ""}`} key={entry.id}>
+            <button type="button" className="calendar-event-open" onClick={() => onOpenEntry(entry.id, selected)} aria-label={ui("ดูรายละเอียด", "View details") + ": " + entry.name}>
+              <span className="calendar-event-icon"><Icon name={entry.travel ? "luggage" : entry.calendar?.type === "contract" ? "file" : "calendar"} size={19}/></span>
+              <div>
+                <strong>{entry.name}</strong>
+                <small>{label} · {entry.calendar?.time}{stop?.endTime && " – " + stop.endTime}{entry.calendar?.end && " · " + ui("สิ้นสุด", "Ends") + " " + dateLabel(entry.calendar.end, language)}</small>
+                {!entry.travel && entry.calendar?.recurrence && <small>{recurrenceLabel(entry.calendar.recurrence, language)}</small>}
+                {past && <small>{ui("ผ่านไปแล้ว", "Past event")}</small>}
+                {entry.calendar?.message && <small>{entry.calendar.message}</small>}
+              </div>
+              <span className="calendar-event-chevron" aria-hidden="true">›</span>
+            </button>
+            {!entry.travel && <button className="row-icon-button delete-icon-button" type="button" onClick={() => onDelete(entry, selected)} aria-label={ui("ลบรายการ", "Delete event")}><Icon name="trash" size={17}/></button>}
+          </article>;
+        }) : <p className="calendar-empty-day">{ui("ไม่มีรายการในวันนี้", "No events today")}</p>}
       </section>
     </div>
     {showForm && typeof document !== "undefined" && createPortal(<div className="modal-backdrop calendar-form-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeForm(); }}><form className="entry-modal calendar-form" onSubmit={save}><div className="modal-top"><div><span className="modal-kicker">{ui("บันทึกแจ้งเตือน", "Reminder")}</span><h2>{editTarget ? ui("แก้ไขนัดหมาย", "Edit appointment") : ui("เพิ่มลงปฏิทิน", "Add to calendar")}</h2></div><button type="button" className="icon-button" onClick={closeForm} aria-label={ui("ปิด", "Close")}><Icon name="close"/></button></div>
@@ -1484,8 +1567,9 @@ function CalendarPage({ entries, language, householdId, editTarget, openRequest,
     </form></div>, document.body)}
   </section>;
 }
-function CalendarDetail({ entry, entries, language, occurrenceDate, onOpenEntry, onEdit, onDelete }: { entry: Entry; entries: Entry[]; language: Language; occurrenceDate: string; onOpenEntry: (id: string) => void; onEdit: () => void; onDelete: () => void }) {
+function CalendarDetail({ entry, entries, language, occurrenceDate, onOpenEntry, onOpenTravel, onEdit, onDelete }: { entry: Entry; entries: Entry[]; language: Language; occurrenceDate: string; onOpenEntry: (id: string) => void; onOpenTravel: () => void; onEdit: () => void; onDelete: () => void }) {
   const calendar = entry.calendar!;
+  const stop = entry.travel?.kind === "stop" ? entry.travel : undefined;
   const ui = (th: string, en: string) => language === "en" ? en : th;
   const linkedEntry = entries.find((item) => item.id === calendar.linkedEntryId);
   const past = isPastOccurrence(entry, occurrenceDate);
@@ -1493,7 +1577,7 @@ function CalendarDetail({ entry, entries, language, occurrenceDate, onOpenEntry,
   const minutes = calendar.remindMinutes ?? 0;
   const reminder = minutes === 0 ? ui("เมื่อถึงเวลา", "At event time") : minutes % 1440 === 0 ? `${minutes / 1440} ${ui("วันก่อน", "days before")}` : minutes % 60 === 0 ? `${minutes / 60} ${ui("ชั่วโมงก่อน", "hours before")}` : `${minutes} ${ui("นาทีก่อน", "minutes before")}`;
   return <section className={`calendar-detail-card ${past ? "past" : ""}`}>
-    <span className="calendar-detail-kind">{calendar.type === "contract" ? ui("สัญญา", "Contract") : ui("นัดหมาย", "Appointment")}</span>
+    <span className="calendar-detail-kind">{entry.travel ? ui("แผนเดินทาง", "Travel plan") : calendar.type === "contract" ? ui("สัญญา", "Contract") : ui("นัดหมาย", "Appointment")}</span>
     {past && <span className="calendar-detail-past">{ui("ผ่านไปแล้ว", "Past appointment")}</span>}
     <h2>{entry.name}</h2>
     {Boolean(entry.photos?.length || entry.photo) && <div className="calendar-detail-photos">{(entry.photos ?? (entry.photo ? [entry.photo] : [])).map((photo, index) => <img src={photo} alt={ui(`รูปประกอบ ${entry.name} ${index + 1}`, `${entry.name} photo ${index + 1}`)} key={photo}/>)}</div>}
@@ -1501,7 +1585,9 @@ function CalendarDetail({ entry, entries, language, occurrenceDate, onOpenEntry,
       <div><dt>{ui("วันเริ่มต้น", "Start date")}</dt><dd>{dateLabel(calendar.start, language)}</dd></div>
       {calendar.recurrence && <><div><dt>{ui("วันที่ของครั้งนี้", "This occurrence")}</dt><dd>{dateLabel(occurrenceDate, language)}</dd></div><div><dt>{ui("ทำซ้ำ", "Repeat")}</dt><dd>{recurrenceLabel(calendar.recurrence, language)}</dd></div></>}
       {calendar.end && <div><dt>{ui("วันสิ้นสุด", "End date")}</dt><dd>{dateLabel(calendar.end, language)}</dd></div>}
-      <div><dt>{ui("เวลา", "Time")}</dt><dd>{calendar.time || ui("ไม่ระบุ", "Not set")}</dd></div>
+      <div><dt>{ui("เวลา", "Time")}</dt><dd>{calendar.time || ui("ไม่ระบุ", "Not set")}{stop?.endTime && " – " + stop.endTime}</dd></div>
+      {stop?.details && <div><dt>{ui("รายละเอียดสถานที่", "Place details")}</dt><dd>{stop.details}</dd></div>}
+      {stop?.contact && <div><dt>{ui("ข้อมูลติดต่อ", "Contact information")}</dt><dd>{stop.contact}</dd></div>}
       <div><dt>{ui("แจ้งเตือนก่อน", "Reminder")}</dt><dd>{reminder}</dd></div>
       <div><dt>{ui("ผู้รับแจ้งเตือน", "Recipients")}</dt><dd>{calendar.recipientIds ? ui(`${calendar.recipientIds.length} คนที่เลือก`, `${calendar.recipientIds.length} selected people`) : ui("ทุกคนในบ้าน", "Everyone at home")}</dd></div>
       {calendar.message && <div><dt>{ui("ข้อความแจ้งเตือน", "Reminder text")}</dt><dd>{calendar.message}</dd></div>}
@@ -1510,7 +1596,8 @@ function CalendarDetail({ entry, entries, language, occurrenceDate, onOpenEntry,
     </dl>
     <div className="calendar-detail-actions">
       {linkedEntry && <button type="button" className="secondary-button" onClick={() => onOpenEntry(linkedEntry.id)}>{ui("ดูรายการที่เกี่ยวข้อง", "View linked record")}</button>}
-      <div className="calendar-detail-manage-actions">{calendar.type === "appointment" && !past && <button type="button" className="secondary-button" onClick={onEdit}><Icon name="edit" size={16}/> {ui("แก้ไขนัดหมาย", "Edit appointment")}</button>}<button type="button" className="danger-button" onClick={onDelete}><Icon name="trash" size={16}/> {calendar.recurrence ? ui("ลบนัดหมาย", "Delete occurrence") : ui("ลบรายการ", "Delete event")}</button></div>
+      {entry.travel ? <button type="button" className="secondary-button" onClick={onOpenTravel}>{ui("เปิดแผนเดินทาง", "Open travel plan")}</button>
+        : <div className="calendar-detail-manage-actions">{calendar.type === "appointment" && !past && <button type="button" className="secondary-button" onClick={onEdit}><Icon name="edit" size={16}/> {ui("แก้ไขนัดหมาย", "Edit appointment")}</button>}<button type="button" className="danger-button" onClick={onDelete}><Icon name="trash" size={16}/> {calendar.recurrence ? ui("ลบนัดหมาย", "Delete occurrence") : ui("ลบรายการ", "Delete event")}</button></div>}
     </div>
   </section>;
 }

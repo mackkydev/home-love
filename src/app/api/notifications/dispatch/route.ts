@@ -1,8 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
-import { calendarOccurrenceDates, type CalendarRecurrence } from "@/lib/calendar-recurrence";
+import { calendarOccurrenceDates } from "@/lib/calendar-recurrence";
+import { isInTrip, type CalendarInfo, type TravelInfo } from "@/lib/travel";
 
-type ReminderEntry = { id: string; name: string; category?: string; kind: string; medicine?: { reminders?: { meal: string; time: string; message: string }[]; recipientIds?: string[] }; stock?: { quantity: number; dailyUse: number; alertDays: number; unit: string; updatedAt?: string; autoDeduct?: boolean }; shopping?: { dueDate: string; completedAt?: string }; calendar?: { type: "appointment" | "contract"; start: string; end?: string; time: string; remindMinutes: number; message: string; recipientIds?: string[]; recurrence?: CalendarRecurrence } };
+type ReminderEntry = { id: string; name: string; category?: string; kind: string; medicine?: { reminders?: { meal: string; time: string; message: string }[]; recipientIds?: string[] }; stock?: { quantity: number; dailyUse: number; alertDays: number; unit: string; updatedAt?: string; autoDeduct?: boolean }; shopping?: { dueDate: string; completedAt?: string }; calendar?: CalendarInfo; travel?: TravelInfo };
 type Due = { key: string; title: string; body: string; url: string };
 
 function dueFor(entry: ReminderEntry, now: Date): Due[] {
@@ -34,7 +35,8 @@ function dueFor(entry: ReminderEntry, now: Date): Due[] {
       const bangkokDay = (timestamp: number) => new Date(timestamp + 7 * 60 * 60_000).toISOString().slice(0, 10);
       const first = bangkokDay(windowStart + minutesBefore * 60_000);
       const last = bangkokDay(now.getTime() + minutesBefore * 60_000);
-      for (const date of calendarOccurrenceDates(event, first, last)) add(`${entry.id}:calendar:${date}:${event.time}`, date, event.time, minutesBefore, entry.name, event.message || `นัดหมาย ${entry.name}`, date);
+      const message = event.message || (entry.travel ? "แจ้งเตือนแผนเดินทาง" : `นัดหมาย ${entry.name}`);
+      for (const date of calendarOccurrenceDates(event, first, last)) add(`${entry.id}:calendar:${date}:${event.time}`, date, event.time, minutesBefore, entry.name, message, date);
     }
   }
   return due;
@@ -62,9 +64,15 @@ export async function POST(request: Request) {
   for (const subscription of subscriptions ?? []) { const list = subscriptionsByUser.get(subscription.user_id) ?? []; list.push(subscription); subscriptionsByUser.set(subscription.user_id, list); }
   const now = new Date();
   const preferencesByUser = new Map<string, Record<string, boolean>>();
+  const tripDates = new Map<string, CalendarInfo>();
+  for (const row of entries ?? []) {
+    const entry = row.data as ReminderEntry;
+    if (entry.travel?.kind === "trip" && entry.calendar) tripDates.set(`${row.household_id}/${entry.id}`, entry.calendar);
+  }
   let sent = 0;
   for (const row of entries ?? []) {
     const entry = row.data as ReminderEntry;
+    if (entry.travel?.kind === "stop" && !isInTrip(entry.calendar?.start ?? "", tripDates.get(`${row.household_id}/${entry.travel.tripId}`))) continue;
     for (const reminder of dueFor(entry, now)) {
       for (const userId of usersByHouse.get(row.household_id) ?? []) {
         if (!preferencesByUser.has(userId)) {
