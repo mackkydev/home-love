@@ -1265,6 +1265,25 @@ body{font-size:17px}
 @media (max-width: 760px) {
   .main-column { background: var(--canvas); }
   .main-column::before { display: none; }
+  .content-area::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: 0 0 auto;
+    height: 275px;
+    background: linear-gradient(180deg, var(--blue) 0%, color-mix(in srgb, var(--blue) 74%, var(--canvas)) 34%, color-mix(in srgb, var(--blue) 25%, var(--canvas)) 73%, transparent 100%);
+    pointer-events: none;
+  }
+  .is-list-view .content-area::before { height: 175px; }
+  [data-theme="dark"] .content-area::before {
+    background: linear-gradient(180deg, #151f35 0%, #243552 36%, color-mix(in srgb, #243552 38%, var(--canvas)) 73%, transparent 100%);
+  }
+  .content-area :is(.welcome-row, .feature-heading, .settings-page-head, .list-category-title, .calendar-toolbar, .list-page > .section-heading) {
+    padding: 10px 13px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--surface);
+  }
   .welcome-row h1,
   .settings-page-head,
   .settings-page-head h1,
