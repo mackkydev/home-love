@@ -1263,7 +1263,10 @@ body{font-size:17px}
 .vault-password-toggle:hover:not(:disabled) { background: var(--canvas); }
 .calendar-detail-card dd { overflow-wrap: anywhere; white-space: pre-wrap; }
 @media (max-width: 760px) {
-  .main-column { background: var(--canvas); }
+  .main-column {
+    --mobile-heading-ink: #05070c;
+    background: var(--canvas);
+  }
   .main-column::before { display: none; }
   .content-area::before {
     content: "";
@@ -1278,23 +1281,17 @@ body{font-size:17px}
   [data-theme="dark"] .content-area::before {
     background: linear-gradient(180deg, #151f35 0%, #243552 36%, color-mix(in srgb, #243552 38%, var(--canvas)) 73%, transparent 100%);
   }
-  .content-area :is(.welcome-row, .feature-heading, .settings-page-head, .list-category-title, .calendar-toolbar, .list-page > .section-heading) {
-    padding: 10px 13px;
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    background: var(--surface);
-  }
-  .welcome-row h1,
-  .settings-page-head,
-  .settings-page-head h1,
-  .is-list-view .list-category-title,
-  .is-list-view .list-category-title strong { color: var(--ink); }
-  .welcome-row p,
-  .welcome-row .eyebrow,
+  [data-theme="dark"] .main-column { --mobile-heading-ink: var(--ink); }
+  .content-area .welcome-row :is(h1, p, .eyebrow),
+  .content-area .feature-heading :is(h1, p),
+  .content-area .settings-page-head :is(h1, span),
+  .content-area .list-category-title :is(strong, small) { color: var(--mobile-heading-ink); }
+  .calendar-toolbar h2,
+  .calendar-toolbar p,
+  .list-page > .section-heading h2,
+  .list-page > .section-heading p { color: var(--ink); }
   .section-heading p,
-  .category-info small,
-  .settings-page-head span,
-  .is-list-view .list-category-title small { color: var(--muted); }
+  .category-info small { color: var(--muted); }
   .is-list-view .list-category-title-icon {
     color: var(--blue-dark);
     border-color: var(--line);
