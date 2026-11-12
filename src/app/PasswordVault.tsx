@@ -1,12 +1,54 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createVault, maxVaultFileBytes, readVaultFile, sealVault, unlockVault, type VaultRecord } from "@/lib/password-vault";
 import { externalWebUrl } from "@/lib/web-url";
 
 type Session = Awaited<ReturnType<typeof unlockVault>>;
 const emptyRecord = { id: "", name: "", username: "", password: "", link: "" };
 const idleLimit = 2 * 60_000;
+const minimumPassphraseLength = 16;
+const characterSegmenter = typeof Intl.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
+
+function passphraseLength(value: string) {
+  const text = value.trim();
+  return characterSegmenter ? Array.from(characterSegmenter.segment(text)).length : Array.from(text).length;
+}
+
+function PasswordField({ label, value, onChange, autoComplete, maxLength, showCount = false, language }: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete: string;
+  maxLength: number;
+  showCount?: boolean;
+  language: "th" | "en";
+}) {
+  const id = useId();
+  const [visible, setVisible] = useState(false);
+  if (!value && visible) setVisible(false);
+  const count = showCount ? passphraseLength(value) : null;
+  const toggleLabel = language === "en" ? (visible ? "Hide typed password" : "Show typed password") : (visible ? "ซ่อนรหัสที่พิมพ์" : "แสดงรหัสที่พิมพ์");
+
+  return <div className="form-label">
+    <div className="vault-password-label">
+      <label htmlFor={id}>{label}</label>
+      {count !== null && <span id={id + "-count"} className={`vault-password-count ${count >= minimumPassphraseLength ? "complete" : ""}`}>{count}/{minimumPassphraseLength}</span>}
+    </div>
+    <div className="vault-password-input">
+      <input id={id} type={visible && value ? "text" : "password"} required value={value} maxLength={maxLength} autoComplete={autoComplete}
+        autoCapitalize="none" autoCorrect="off" spellCheck={false} aria-describedby={showCount ? id + "-count" : undefined} onChange={(event) => onChange(event.target.value)}/>
+      <button type="button" className="vault-password-toggle" aria-label={toggleLabel + " (" + label + ")"} aria-controls={id} disabled={!value}
+        onClick={() => setVisible((current) => !current)}>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/>
+          <circle cx="12" cy="12" r="2.5"/>
+          {visible && <path d="m3 3 18 18"/>}
+        </svg>
+      </button>
+    </div>
+  </div>;
+}
 
 export default function PasswordVault({ scope, language }: { scope: string; language: "th" | "en" }) {
   const ui = (th: string, en: string) => language === "en" ? en : th;
@@ -96,7 +138,7 @@ export default function PasswordVault({ scope, language }: { scope: string; lang
     event.preventDefault();
     if (busy || !available) return;
     const file = backup || saved;
-    if (!file && (passphrase.length < 16 || passphrase.trim().length < 16 || passphrase !== confirmation)) {
+    if (!file && (passphraseLength(passphrase) < minimumPassphraseLength || passphrase !== confirmation)) {
       setError(ui("ตั้งรหัสหลักอย่างน้อย 16 ตัวอักษรและยืนยันให้ตรงกัน", "Use at least 16 characters and enter the same passphrase twice."));
       return;
     }
@@ -193,15 +235,13 @@ export default function PasswordVault({ scope, language }: { scope: string; lang
     {error && <p className="feature-error" role="alert">{error}</p>}
     {saved === undefined ? <p role="status">{ui("กำลังเปิดคลัง…", "Loading vault…")}</p> : !available ? <p role="alert">{ui("ต้องเปิดผ่าน HTTPS และอนุญาตให้เบราว์เซอร์จัดเก็บข้อมูล", "Use HTTPS and allow browser storage to open the vault.")}</p> : !session ? <section className="feature-card vault-lock-card">
       <h2>{backup ? ui("กู้คืนจากไฟล์เข้ารหัส", "Restore an encrypted file") : creating ? ui("ตั้งรหัสหลัก", "Set a master passphrase") : ui("ปลดล็อกคลัง", "Unlock the vault")}</h2>
-      <p>{creating ? ui("ใช้วลีรหัสยาวอย่างน้อย 16 ตัวอักษรที่ใช้เฉพาะกับคลังนี้ ถ้าลืมรหัสหลักจะเปิดไฟล์ไม่ได้", "Use a unique passphrase of at least 16 characters. You need it to open your backup.") : ui("คลังจะล็อกเมื่อสลับออกจากแอปหรือไม่มีการใช้งาน 2 นาที", "The vault locks when you leave the app or after two minutes of inactivity.")}</p>
+      <p>{creating ? ui("ตั้งข้อความสำหรับเข้าดูรหัสในคลังอย่างน้อย 16 ตัวอักษร ใช้ภาษาไทย ภาษาอังกฤษ ตัวเลข และเว้นวรรคได้ ถ้าลืมรหัสหลักจะเปิดไฟล์สำรองไม่ได้", "Set a master password of at least 16 characters to open your vault. You can use Thai or English letters, numbers, and spaces. You need it to open your backup.") : ui("คลังจะล็อกเมื่อสลับออกจากแอปหรือไม่มีการใช้งาน 2 นาที", "The vault locks when you leave the app or after two minutes of inactivity.")}</p>
       {backup && saved && <p className="feature-warning">{ui("เมื่อปลดล็อกสำเร็จ ไฟล์ที่เลือกจะแทนที่คลังในเบราว์เซอร์นี้", "A successful unlock will replace the vault in this browser with the selected backup.")}</p>}
       <form onSubmit={(event) => void open(event)} autoComplete="off">
-        <label className="form-label">{ui("รหัสหลัก", "Master passphrase")}
-          <input type="password" required maxLength={1024} minLength={creating ? 16 : undefined} autoComplete={creating ? "new-password" : "off"} value={passphrase} onChange={(event) => setPassphrase(event.target.value)}/>
-        </label>
-        {creating && <label className="form-label">{ui("ยืนยันรหัสหลัก", "Confirm master passphrase")}
-          <input type="password" required minLength={16} maxLength={1024} autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)}/>
-        </label>}
+        <PasswordField label={ui("รหัสหลัก", "Master passphrase")} value={passphrase} onChange={setPassphrase} maxLength={1024}
+          autoComplete={creating ? "new-password" : "off"} showCount={creating} language={language}/>
+        {creating && <PasswordField label={ui("ยืนยันรหัสหลัก", "Confirm master passphrase")} value={confirmation} onChange={setConfirmation}
+          maxLength={1024} autoComplete="new-password" showCount language={language}/>}
         <button type="submit" className="primary-button" disabled={busy}>{busy ? ui("กำลังดำเนินการ…", "Working…") : backup && saved ? ui("ปลดล็อกและแทนที่คลัง", "Unlock and replace vault") : creating ? ui("สร้างคลังรหัสผ่าน", "Create vault") : ui("ปลดล็อก", "Unlock")}</button>
       </form>
       <div className="feature-actions vault-file-actions">
@@ -218,7 +258,8 @@ export default function PasswordVault({ scope, language }: { scope: string; lang
         <h2>{draft.id ? ui("แก้ไขรหัสผ่าน", "Edit login") : ui("เพิ่มรหัสผ่าน", "Add login")}</h2>
         <label className="form-label">{ui("ชื่อบริการ", "Service name")}<input required maxLength={160} placeholder="Facebook" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
         <label className="form-label">{ui("ชื่อผู้ใช้หรืออีเมล", "Username or email")}<input required maxLength={320} autoComplete="off" autoCapitalize="none" spellCheck={false} value={draft.username} onChange={(event) => setDraft({ ...draft, username: event.target.value })}/></label>
-        <label className="form-label">{ui("รหัสผ่าน", "Password")}<input type="password" required maxLength={2048} autoComplete="new-password" value={draft.password} onChange={(event) => setDraft({ ...draft, password: event.target.value })}/></label>
+        <PasswordField key={draft.id} label={ui("รหัสผ่าน", "Password")} value={draft.password} onChange={(password) => setDraft({ ...draft, password })}
+          maxLength={2048} autoComplete="new-password" language={language}/>
         <label className="form-label">{ui("ลิงก์หรือข้อความ (ไม่บังคับ)", "Link or text (optional)")}<input maxLength={2048} value={draft.link} onChange={(event) => setDraft({ ...draft, link: event.target.value })}/></label>
         <div className="feature-actions"><button type="submit" className="primary-button" disabled={busy}>{ui("บันทึกเข้าคลัง", "Save to vault")}</button><button type="button" className="secondary-button" disabled={busy} onClick={() => setDraft(null)}>{ui("ยกเลิก", "Cancel")}</button></div>
       </form>}

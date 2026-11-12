@@ -1128,6 +1128,29 @@ body{font-size:17px}
 .vault-records { grid-template-columns: repeat(auto-fill, minmax(min(100%, 285px), 1fr)); }
 .vault-record a { display: inline-block; margin-top: 4px; color: var(--blue-dark); text-decoration: underline; }
 .vault-revealed { display: block; padding: 10px; margin-top: 10px; border-radius: 8px; background: var(--canvas); white-space: pre-wrap; }
+.vault-password-label { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.vault-password-count { color: #b3262b; font-variant-numeric: tabular-nums; }
+.vault-password-count.complete { color: #187345; }
+[data-theme="dark"] .vault-password-count { color: #ff9caa; }
+[data-theme="dark"] .vault-password-count.complete { color: #72df9c; }
+.vault-password-input { position: relative; }
+.vault-password-input input { padding-inline-end: 48px; }
+.vault-password-toggle {
+  position: absolute;
+  inset-inline-end: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+}
+.vault-password-toggle:hover:not(:disabled) { background: var(--canvas); }
 .calendar-detail-card dd { overflow-wrap: anywhere; white-space: pre-wrap; }
 @media (max-width: 760px) {
   .feature-shortcuts { gap: 8px; }
