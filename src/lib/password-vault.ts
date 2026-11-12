@@ -4,6 +4,7 @@ export type VaultRecord = {
   username: string;
   password: string;
   link: string;
+  logo?: string;
 };
 
 const format = "home-love-vault-v1";
@@ -11,6 +12,7 @@ const iterations = 600_000;
 const encoder = new TextEncoder();
 const additionalData = encoder.encode(format);
 export const maxVaultFileBytes = 1024 * 1024;
+export const maxVaultLogoBytes = 16_000;
 
 function encode(bytes: Uint8Array): string {
   let binary = "";
@@ -69,7 +71,9 @@ function isVaultRecord(value: unknown): value is VaultRecord {
   if (!value || typeof value !== "object") return false;
   const record = value as Partial<VaultRecord>;
   return typeof record.id === "string" && !!record.id && typeof record.name === "string" && !!record.name
-    && typeof record.username === "string" && typeof record.password === "string" && typeof record.link === "string";
+    && typeof record.username === "string" && typeof record.password === "string" && typeof record.link === "string"
+    && (record.logo === undefined || (typeof record.logo === "string" && record.logo.length * 0.75 <= maxVaultLogoBytes
+      && /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(record.logo)));
 }
 
 export async function unlockVault(file: string, passphrase: string) {

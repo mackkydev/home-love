@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { createVault, maxVaultFileBytes, readVaultFile, sealVault, unlockVault, type VaultRecord } from "@/lib/password-vault";
+import { createVault, maxVaultFileBytes, maxVaultLogoBytes, readVaultFile, sealVault, unlockVault, type VaultRecord } from "@/lib/password-vault";
 import { externalWebUrl } from "@/lib/web-url";
+import Icon from "./Icon";
+import PhotoCropField from "./PhotoCropField";
 
 type Session = Awaited<ReturnType<typeof unlockVault>>;
 const emptyRecord = { id: "", name: "", username: "", password: "", link: "" };
@@ -261,6 +263,8 @@ export default function PasswordVault({ scope, language }: { scope: string; lang
         <PasswordField key={draft.id} label={ui("รหัสผ่าน", "Password")} value={draft.password} onChange={(password) => setDraft({ ...draft, password })}
           maxLength={2048} autoComplete="new-password" language={language}/>
         <label className="form-label">{ui("ลิงก์หรือข้อความ (ไม่บังคับ)", "Link or text (optional)")}<input maxLength={2048} value={draft.link} onChange={(event) => setDraft({ ...draft, link: event.target.value })}/></label>
+        <PhotoCropField value={draft.logo} onChange={(logo) => setDraft((current) => current ? { ...current, logo } : current)}
+          label={ui("อัปโหลดโลโก้", "Upload logo")} language={language} aspect={1} maxWidth={128} maxBytes={maxVaultLogoBytes}/>
         <div className="feature-actions"><button type="submit" className="primary-button" disabled={busy}>{ui("บันทึกเข้าคลัง", "Save to vault")}</button><button type="button" className="secondary-button" disabled={busy} onClick={() => setDraft(null)}>{ui("ยกเลิก", "Cancel")}</button></div>
       </form>}
       {!session.records.length && !draft && <p className="feature-card">{ui("ยังไม่มีรหัสผ่านในคลัง", "Your vault is empty.")}</p>}
@@ -268,7 +272,13 @@ export default function PasswordVault({ scope, language }: { scope: string; lang
         {session.records.map((item) => {
           const href = externalWebUrl(item.link);
           return <li className="feature-card vault-record" key={item.id}>
-            <div><h2>{item.name}</h2><p>{item.username}</p>{item.link && (href ? <a href={href} target="_blank" rel="noopener noreferrer">{item.link} ↗</a> : <p>{item.link}</p>)}</div>
+            <div className="vault-record-heading">
+              <span className="vault-logo">
+                {/* eslint-disable-next-line @next/next/no-img-element -- Logo is a locally decrypted data URL. */}
+                {item.logo ? <img src={item.logo} alt=""/> : <Icon name="lock" size={20}/>}
+              </span>
+              <div><h2>{item.name}</h2><p>{item.username}</p>{item.link && (href ? <a href={href} target="_blank" rel="noopener noreferrer">{item.link} ↗</a> : <p>{item.link}</p>)}</div>
+            </div>
             <div className="feature-actions">
               <button type="button" className="secondary-button" aria-pressed={revealed === item.id} onClick={() => setRevealed(revealed === item.id ? null : item.id)}>{revealed === item.id ? ui("ซ่อนรหัส", "Hide password") : ui("แสดงรหัส", "Show password")}</button>
               <button type="button" className="secondary-button" disabled={busy} onClick={() => { setDraft(item); setRevealed(null); setRemoveId(null); }}>{ui("แก้ไข", "Edit")}</button>

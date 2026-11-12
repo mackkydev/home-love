@@ -3,6 +3,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { isPlaceRecord, placeGroups, placePhotoMaxBytes, placesCategory, type PlaceGroup, type PlaceRecord } from "@/lib/places";
 import { externalWebUrl } from "@/lib/web-url";
+import Icon from "./Icon";
+import PhotoCropField from "./PhotoCropField";
 
 type Language = "th" | "en";
 type PlaceSource = Omit<PlaceRecord, "kind" | "category" | "place"> & { kind: string; category: string; place?: PlaceRecord["place"] };
@@ -26,10 +28,11 @@ function PlaceStar({ entry, language, onStar }: { entry: PlaceRecord; language: 
 }
 
 export function PlaceRow({ entry, language, onOpen, onStar }: { entry: PlaceRecord; language: Language; onOpen: PlaceAction; onStar: PlaceAction }) {
+  const group = placeGroups.find((item) => item.id === entry.place.group);
   return <article className="feature-card place-row">
     <button type="button" className="place-row-open" onClick={() => onOpen(entry.id)}>
       <span className="place-thumbnail">
-        {entry.photo && !entry.photo.startsWith("storage:") ? <PlacePhoto photo={entry.photo} alt=""/> : <span aria-hidden="true">☆</span>}
+        <Icon name={group?.icon ?? "star"} size={22}/>
       </span>
       <span className="place-row-copy"><strong>{entry.name}</strong><small>{groupLabel(entry.place.group, language)}</small></span>
     </button>
@@ -49,9 +52,10 @@ export default function PlacesPage({ entries, language, onAdd, onOpen, onStar }:
       <h1>{en ? "Starred places" : placesCategory}</h1>
       <button type="button" className="primary-button" onClick={() => onAdd(group === "all" ? undefined : group)}>{en ? "＋ Add place" : "＋ เพิ่มสถานที่"}</button>
     </header>
-    <nav className="place-filters" aria-label={en ? "Place categories" : "หมวดหมู่สถานที่"}>
-      <button type="button" className="filter-chip" aria-pressed={group === "all"} onClick={() => setGroup("all")}>{en ? "All" : "ทั้งหมด"}</button>
-      {placeGroups.map((item) => <button type="button" className="filter-chip" key={item.id} aria-pressed={group === item.id} onClick={() => setGroup(item.id)}>{item[language]}</button>)}
+    <nav className="filter-chips place-filters" aria-label={en ? "Place categories" : "หมวดหมู่สถานที่"}>
+      <button type="button" className={`filter-chip${group === "all" ? " selected" : ""}`} aria-pressed={group === "all"} onClick={() => setGroup("all")}><Icon name="grid" size={14}/>{en ? "All" : "ทั้งหมด"}</button>
+      {placeGroups.map((item) => <button type="button" className={`filter-chip${group === item.id ? " selected" : ""}`} key={item.id}
+        aria-pressed={group === item.id} onClick={() => setGroup(item.id)}><Icon name={item.icon} size={14}/>{item[language]}</button>)}
     </nav>
     {places.length ? <div className="place-list">
       {places.map((entry) => <PlaceRow key={entry.id} entry={entry} language={language} onOpen={onOpen} onStar={onStar}/>)}
@@ -84,9 +88,8 @@ export function PlaceDetail({ entry, language, onEdit, onDelete, onStar }: {
   </article>;
 }
 
-export function PlaceEditor({ entry, initialGroup, language, today, compressPhoto, onSave, onCancel }: {
+export function PlaceEditor({ entry, initialGroup, language, today, onSave, onCancel }: {
   entry?: PlaceRecord; initialGroup?: PlaceGroup; language: Language; today: string;
-  compressPhoto: (file: File, maxBytes: number) => Promise<string>;
   onSave: (entry: PlaceRecord) => void; onCancel: () => void;
 }) {
   const ui = (th: string, en: string) => language === "en" ? en : th;
@@ -95,7 +98,6 @@ export function PlaceEditor({ entry, initialGroup, language, today, compressPhot
     details: entry?.place.details ?? "", phone: entry?.place.phone ?? "",
     map: entry?.place.locationUrl ?? "", photo: entry?.photo,
   });
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const dialogRef = useRef<HTMLDialogElement>(null);
   const title = useId();
@@ -105,25 +107,10 @@ export function PlaceEditor({ entry, initialGroup, language, today, compressPhot
     return () => dialog?.close();
   }, []);
   const cancel = () => { dialogRef.current?.close(); onCancel(); };
-  const choosePhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = "";
-    if (!file) return;
-    setBusy(true);
-    setError("");
-    try {
-      const photo = await compressPhoto(file, placePhotoMaxBytes);
-      setDraft((current) => ({ ...current, photo }));
-    } catch {
-      setError(ui("ย่อรูปให้ไม่เกิน 500 KB ไม่สำเร็จ กรุณาเลือกรูปอื่น", "Could not resize this photo to 500 KB. Choose another image."));
-    } finally {
-      setBusy(false);
-    }
-  };
   const save = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const name = draft.name.trim();
-    if (!name || busy) return;
+    if (!name) return;
     const url = draft.map.trim();
     const locationUrl = externalWebUrl(url);
     if (url && !locationUrl) {
@@ -150,17 +137,12 @@ export function PlaceEditor({ entry, initialGroup, language, today, compressPhot
       <label className="form-label">{ui("รายละเอียดสถานที่", "Place details")}<textarea rows={4} maxLength={2000} value={draft.details} onChange={(event) => setDraft({ ...draft, details: event.target.value })}/></label>
       <label className="form-label">{ui("เบอร์ติดต่อ", "Phone number")}<input type="tel" maxLength={80} value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })}/></label>
       <label className="form-label">{ui("ลิงก์ Google Maps", "Google Maps link")}<input type="url" maxLength={2048} placeholder="https://maps.app.goo.gl/…" value={draft.map} onChange={(event) => setDraft({ ...draft, map: event.target.value })}/></label>
-      <div className="place-photo-field">
-        <PlacePhoto photo={draft.photo} alt={ui("รูปที่เลือก", "Selected photo")}/>
-        <div className="feature-actions">
-          <label className="secondary-button feature-file-button">{busy ? ui("กำลังย่อรูป…", "Resizing photo…") : ui("เลือกรูปสถานที่", "Choose a photo")}<input type="file" accept="image/*" disabled={busy} onChange={(event) => void choosePhoto(event)}/></label>
-          {draft.photo && <button type="button" className="secondary-button" disabled={busy} onClick={() => setDraft({ ...draft, photo: undefined })}>{ui("เอารูปออก", "Remove photo")}</button>}
-        </div>
-        <small>{ui("ระบบย่อรูปให้ไม่เกิน 500 KB", "Photos are resized to 500 KB or less.")}</small>
-      </div>
+      <PhotoCropField value={draft.photo} onChange={(photo) => setDraft((current) => ({ ...current, photo }))} language={language}
+        label={ui("เลือกรูปสถานที่", "Choose a photo")} maxBytes={placePhotoMaxBytes}
+        hint={ui("ระบบย่อรูปให้ไม่เกิน 500 KB", "Photos are resized to 500 KB or less.")}/>
       <div className="feature-actions feature-dialog-actions">
         <button type="button" className="secondary-button" onClick={cancel}>{ui("ยกเลิก", "Cancel")}</button>
-        <button type="submit" className="primary-button" disabled={busy}>{ui("บันทึก", "Save")}</button>
+        <button type="submit" className="primary-button">{ui("บันทึก", "Save")}</button>
       </div>
     </form>
   </dialog>;

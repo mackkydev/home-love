@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { isInTrip, isTravelRecord, travelSelection, type CalendarInfo, type TravelInfo, type TravelRecord, type TravelSelection } from "@/lib/travel";
 import { externalWebUrl } from "@/lib/web-url";
+import PhotoCropField from "./PhotoCropField";
 
 type Language = "th" | "en";
 type SourceRecord = Omit<TravelRecord, "kind" | "calendar" | "travel"> & { kind: string; calendar?: CalendarInfo; travel?: TravelInfo; photos?: string[] };
@@ -22,13 +23,12 @@ function TravelPhoto({ source, alt }: { source?: string; alt: string }) {
   return source && !source.startsWith("storage:") ? <img src={source} alt={alt}/> : null;
 }
 
-function TravelEditor({ entry, trip, date, relatedDates, language, compressPhoto, onSave, onCancel }: {
+function TravelEditor({ entry, trip, date, relatedDates, language, onSave, onCancel }: {
   entry?: TravelRecord;
   trip?: TravelRecord;
   date: string;
   relatedDates: string[];
   language: Language;
-  compressPhoto: (file: File) => Promise<string>;
   onSave: (entry: TravelRecord) => void;
   onCancel: () => void;
 }) {
@@ -42,7 +42,6 @@ function TravelEditor({ entry, trip, date, relatedDates, language, compressPhoto
     map: entry?.calendar.locationUrl ?? "", remindMinutes: entry?.calendar.remindMinutes ?? 15,
     reminderTime: entry?.calendar.time ?? "09:00", photo: entry?.photo,
   });
-  const [loadingPhoto, setLoadingPhoto] = useState(false);
   const [error, setError] = useState("");
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -52,28 +51,9 @@ function TravelEditor({ entry, trip, date, relatedDates, language, compressPhoto
     return () => dialog?.close();
   }, []);
   const cancel = () => { dialogRef.current?.close(); onCancel(); };
-  const choosePhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = "";
-    if (!file) return;
-    if (file.size > 1024 * 1024) {
-      setError(ui("เลือกรูปขนาดไม่เกิน 1 MB", "Choose a photo no larger than 1 MB."));
-      return;
-    }
-    setLoadingPhoto(true);
-    setError("");
-    try {
-      const photo = await compressPhoto(file);
-      setDraft((current) => ({ ...current, photo }));
-    } catch {
-      setError(ui("เปิดรูปนี้ไม่ได้ กรุณาเลือกรูปอื่น", "Could not open this photo. Choose another image."));
-    } finally {
-      setLoadingPhoto(false);
-    }
-  };
   const save = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!draft.name.trim() || !draft.date || !draft.time || loadingPhoto) return;
+    if (!draft.name.trim() || !draft.date || !draft.time) return;
     const map = draft.map.trim();
     const locationUrl = externalWebUrl(map);
     if (map && !locationUrl) {
@@ -144,24 +124,18 @@ function TravelEditor({ entry, trip, date, relatedDates, language, compressPhoto
         <option value={60}>{ui("ล่วงหน้า 1 ชั่วโมง", "1 hour before")}</option>
       </select></label>
       : <label className="form-label">{ui("เวลาแจ้งเตือนแผนแต่ละวัน", "Daily trip reminder time")}<input required type="time" value={draft.reminderTime} onInput={(event) => setDraft({ ...draft, reminderTime: event.currentTarget.value })}/></label>}
-    <div className="travel-photo-field">
-      <TravelPhoto source={draft.photo} alt={ui("รูปที่เลือก", "Selected photo")}/>
-      <div className="feature-actions">
-        <label className="secondary-button feature-file-button">{loadingPhoto ? ui("กำลังเปิดรูป…", "Loading photo…") : trip ? ui("เลือกรูปสถานที่ · สูงสุด 1 MB", "Choose place photo · 1 MB max") : ui("เลือกรูปปก · สูงสุด 1 MB", "Choose cover photo · 1 MB max")}
-          <input type="file" accept="image/*" disabled={loadingPhoto} onChange={(event) => void choosePhoto(event)}/>
-        </label>
-        {draft.photo && <button type="button" className="secondary-button" disabled={loadingPhoto} onClick={() => setDraft({ ...draft, photo: undefined })}>{ui("เอารูปออก", "Remove photo")}</button>}
-      </div>
-    </div>
+    <PhotoCropField value={draft.photo} onChange={(photo) => setDraft((current) => ({ ...current, photo }))} language={language}
+      label={trip ? ui("เลือกรูปสถานที่", "Choose place photo") : ui("เลือกรูปปก", "Choose cover photo")} maxBytes={1024 * 1024}
+      hint={ui("ระบบย่อรูปให้ไม่เกิน 1 MB", "Photos are resized to 1 MB or less.")}/>
     <div className="feature-actions feature-dialog-actions">
-      <button type="submit" className="primary-button" disabled={loadingPhoto}>{ui("บันทึก", "Save")}</button>
+      <button type="submit" className="primary-button">{ui("บันทึก", "Save")}</button>
       <button type="button" className="secondary-button" onClick={cancel}>{ui("ยกเลิก", "Cancel")}</button>
     </div>
     </form>
   </dialog>;
 }
 
-export default function TravelPage({ entries, language, today, selection, onSelect, onSave, onRemove, onCalendar, compressPhoto }: {
+export default function TravelPage({ entries, language, today, selection, onSelect, onSave, onRemove, onCalendar }: {
   entries: SourceRecord[];
   language: Language;
   today: string;
@@ -170,7 +144,6 @@ export default function TravelPage({ entries, language, today, selection, onSele
   onSave: (entry: TravelRecord) => void;
   onRemove: (entry: TravelRecord) => void;
   onCalendar: (date: string) => void;
-  compressPhoto: (file: File) => Promise<string>;
 }) {
   const ui = (th: string, en: string) => language === "en" ? en : th;
   const records = entries.filter(isTravelRecord);
@@ -200,7 +173,7 @@ export default function TravelPage({ entries, language, today, selection, onSele
       <div className="feature-actions"><button type="button" className="danger-button" onClick={() => { onRemove(removing); navigate(removing.travel.kind === "trip" ? null : { id: removing.travel.tripId, date }); }}>{ui("ยืนยันลบ", "Confirm deletion")}</button><button type="button" className="secondary-button" onClick={() => setRemoving(null)}>{ui("ยกเลิก", "Cancel")}</button></div>
     </section>}
     {editor && (editor.kind === "trip" || trip) && <TravelEditor key={editor.entry?.id ?? editor.kind} entry={editor.entry} trip={editor.kind === "stop" ? trip : undefined} date={date}
-      relatedDates={tripStops.map((stop) => stop.date)} language={language} compressPhoto={compressPhoto} onSave={save} onCancel={() => setEditor(null)}/>}
+      relatedDates={tripStops.map((stop) => stop.date)} language={language} onSave={save} onCancel={() => setEditor(null)}/>}
     {!trip ? trips.length ? <ul className="travel-trips">
       {trips.map((item) => <li className="feature-card travel-trip" key={item.id}>
         <button type="button" onClick={() => navigate({ id: item.id })}>

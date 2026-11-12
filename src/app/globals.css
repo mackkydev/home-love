@@ -1140,19 +1140,40 @@ body{font-size:17px}
   border-top: 1px solid var(--line);
   background: var(--surface);
 }
-.travel-photo-field { margin-block: 12px; }
-.travel-photo-field img { width: min(100%, 240px); max-height: 150px; object-fit: cover; border-radius: 10px; }
+.photo-crop-field { margin-block: 12px; }
+.photo-crop-field small { display: block; margin-top: 6px; color: var(--muted); }
+.photo-crop-preview { display: block; width: min(100%, 220px); object-fit: contain; border-radius: 10px; background: var(--canvas); }
+.photo-crop-preview.square { width: 64px; }
+.photo-crop-dialog { width: min(calc(100% - 28px), 480px); }
+.photo-crop-card { border: 0; border-radius: 0; box-shadow: none; }
+.photo-crop-frame {
+  position: relative;
+  overflow: hidden;
+  margin: 12px auto;
+  width: min(100%, 350px);
+  background: var(--canvas);
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.photo-crop-frame:active { cursor: grabbing; }
+.photo-crop-frame:focus-visible { outline-width: 3px; outline-offset: 5px; }
+.photo-crop-frame img { position: absolute; max-width: none; max-height: none; pointer-events: none; }
+.photo-crop-zoom { display: flex; align-items: center; gap: 10px; }
+.photo-crop-zoom input { flex: 1; min-width: 0; accent-color: var(--blue); }
 .travel-trips, .travel-stops, .vault-records { list-style: none; display: grid; gap: 12px; padding: 0; margin: 0; }
 .travel-trips { grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); }
 .travel-trip { padding: 0; overflow: hidden; }
 .travel-trip button { display: grid; width: 100%; padding: 0; text-align: start; border: 0; background: transparent; color: var(--ink); }
 .travel-trip button:hover strong { text-decoration: underline; }
 .travel-trip button:focus-visible { outline-offset: -3px; }
-.travel-trip img { width: 100%; aspect-ratio: 2 / 1; object-fit: cover; }
+.travel-trip img { width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: var(--canvas); }
 .travel-trip span { display: grid; gap: 4px; padding: 16px; }
 .travel-trip small { color: var(--muted); }
 .travel-overview { overflow: hidden; padding: 0; }
-.travel-overview img { width: 100%; height: clamp(150px, 26vw, 280px); object-fit: cover; }
+.travel-overview img { display: block; width: 100%; aspect-ratio: 16 / 9; max-height: 340px; object-fit: contain; background: var(--canvas); }
 .travel-overview > div { padding: clamp(15px, 3vw, 24px); }
 .travel-overview h2 { font-size: clamp(22px, 3vw, 28px); margin-bottom: 4px; }
 .travel-overview-details { white-space: pre-wrap; }
@@ -1167,8 +1188,8 @@ body{font-size:17px}
 .travel-time { font-size: 14px; font-weight: 700; color: var(--blue-dark); font-variant-numeric: tabular-nums; }
 .travel-stop-content > img { width: min(100%, 280px); aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; margin-bottom: 10px; }
 .travel-stop-content p { white-space: pre-wrap; }
-.place-filters { display: flex; flex-wrap: wrap; gap: 8px; }
-.place-filters button { min-height: 38px; }
+.place-filters { flex-wrap: nowrap; min-width: 0; overflow-x: auto; margin: 0; padding: 0 0 3px; }
+.place-filters button { flex: none; white-space: nowrap; }
 .place-filters button[aria-pressed="true"] {
   border-color: var(--blue);
   color: var(--blue-dark);
@@ -1203,9 +1224,8 @@ body{font-size:17px}
   color: #995d08;
   font-size: 22px;
 }
-.place-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
 .place-row-copy { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
-.place-row-copy small, .place-photo-field small { color: var(--muted); }
+.place-row-copy small { color: var(--muted); }
 .place-star {
   display: grid;
   place-items: center;
@@ -1227,15 +1247,17 @@ body{font-size:17px}
 }
 [data-theme="dark"] :is(.place-thumbnail, .place-star:hover, .place-star[aria-pressed="true"]) { color: #ffcf79; }
 .place-detail { max-width: 760px; margin-inline: auto; padding: 0; overflow: hidden; }
-.place-detail > img { display: block; width: 100%; max-height: 400px; object-fit: cover; }
+.place-detail > img { display: block; width: 100%; aspect-ratio: 16 / 9; max-height: 400px; object-fit: contain; background: var(--canvas); }
 .place-detail-copy { padding: clamp(16px, 3vw, 26px); }
 .place-detail-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .place-detail-heading h2 { margin: 4px 0 12px; font-size: clamp(21px, 4vw, 28px); }
 .place-detail-copy .place-details-text { margin-block: 0 12px; color: var(--ink); white-space: pre-wrap; }
 .place-detail-copy a[href^="tel:"] { color: var(--blue-dark); text-decoration: underline; }
-.place-photo-field img { width: min(100%, 220px); max-height: 140px; object-fit: cover; border-radius: 10px; }
-.place-photo-field small { display: block; margin-top: 6px; }
 .vault-records { grid-template-columns: repeat(auto-fill, minmax(min(100%, 285px), 1fr)); }
+.vault-record-heading { display: flex; align-items: flex-start; gap: 12px; }
+.vault-record-heading > div { min-width: 0; }
+.vault-logo { display: grid; place-items: center; flex: none; width: 48px; height: 48px; overflow: hidden; border-radius: 11px; background: var(--canvas); color: var(--blue-dark); }
+.vault-logo img { width: 100%; height: 100%; object-fit: contain; }
 .vault-record a { display: inline-block; margin-top: 4px; color: var(--blue-dark); text-decoration: underline; }
 .vault-revealed { display: block; padding: 10px; margin-top: 10px; border-radius: 8px; background: var(--canvas); white-space: pre-wrap; }
 .vault-password-label { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }

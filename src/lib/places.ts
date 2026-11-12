@@ -2,14 +2,14 @@ export const placesCategory = "สถานที่ติดดาว";
 export const placePhotoMaxBytes = 500_000;
 
 export const placeGroups = [
-  { id: "food", th: "กินอร่อย", en: "Good food" },
-  { id: "sightseeing", th: "เที่ยวเพลิน", en: "Sightseeing" },
-  { id: "deals", th: "ขายถูก", en: "Good deals" },
-  { id: "favorites", th: "ถูกใจใช่เลย", en: "Loved it" },
-  { id: "relax", th: "นั่งชิล", en: "Relaxing spots" },
-  { id: "dance", th: "แดนซ์กระจาย", en: "Dancing" },
-  { id: "work", th: "นั่งทำงาน", en: "Work spots" },
-  { id: "care", th: "รักษาดี", en: "Good care" },
+  { id: "food", th: "กินอร่อย", en: "Good food", icon: "utensils" },
+  { id: "sightseeing", th: "เที่ยวเพลิน", en: "Sightseeing", icon: "mountain" },
+  { id: "deals", th: "ขายถูก", en: "Good deals", icon: "tag" },
+  { id: "favorites", th: "ถูกใจใช่เลย", en: "Loved it", icon: "heart" },
+  { id: "relax", th: "นั่งชิล", en: "Relaxing spots", icon: "cup" },
+  { id: "dance", th: "แดนซ์กระจาย", en: "Dancing", icon: "music" },
+  { id: "work", th: "นั่งทำงาน", en: "Work spots", icon: "laptop" },
+  { id: "care", th: "รักษาดี", en: "Good care", icon: "plus" },
 ] as const;
 
 export type PlaceGroup = (typeof placeGroups)[number]["id"];
