@@ -6,7 +6,8 @@
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:admin": "node --test tests/admin-db.test.mjs tests/clipboard.test.mjs tests/cloud-assets.test.mjs tests/upload-route.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.3",
@@ -16,6 +17,7 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

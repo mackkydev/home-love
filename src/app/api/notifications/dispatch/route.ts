@@ -54,12 +54,12 @@ export async function POST(request: Request) {
   const db = createClient(url, key, { auth: { persistSession: false } });
   const [{ data: entries, error: entriesError }, { data: members, error: membersError }, { data: subscriptions, error: subscriptionsError }] = await Promise.all([
     db.from("entries").select("household_id,data"),
-    db.from("household_members").select("household_id,user_id"),
+    db.rpc("active_notification_members"),
     db.from("push_subscriptions").select("endpoint,user_id,p256dh,auth_key"),
   ]);
   if (entriesError || membersError || subscriptionsError) return Response.json({ error: "Could not load notifications" }, { status: 500 });
   const usersByHouse = new Map<string, Set<string>>();
-  for (const member of members ?? []) { const users = usersByHouse.get(member.household_id) ?? new Set<string>(); users.add(member.user_id); usersByHouse.set(member.household_id, users); }
+  for (const member of (members ?? []) as { household_id: string; user_id: string }[]) { const users = usersByHouse.get(member.household_id) ?? new Set<string>(); users.add(member.user_id); usersByHouse.set(member.household_id, users); }
   const subscriptionsByUser = new Map<string, typeof subscriptions>();
   for (const subscription of subscriptions ?? []) { const list = subscriptionsByUser.get(subscription.user_id) ?? []; list.push(subscription); subscriptionsByUser.set(subscription.user_id, list); }
   const now = new Date();

@@ -1,15 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { createVault, maxVaultFileBytes, maxVaultLogoBytes, readVaultFile, sealVault, unlockVault, type VaultRecord } from "@/lib/password-vault";
 import { externalWebUrl } from "@/lib/web-url";
 import Icon from "./Icon";
+import { passwordClipboard, type ClipboardState } from "@/lib/password-clipboard";
 import PhotoCropField from "./PhotoCropField";
 
 type Session = Awaited<ReturnType<typeof unlockVault>>;
 const emptyRecord = { id: "", name: "", username: "", password: "", link: "" };
 const idleLimit = 2 * 60_000;
 const minimumPassphraseLength = 16;
+const emptyClipboardState: ClipboardState = { status: "idle", expiresAt: 0 };
+const subscribeClipboard = (listener: () => void) => passwordClipboard().subscribe(listener);
+const clipboardSnapshot = () => passwordClipboard().getState();
+const serverClipboardSnapshot = () => emptyClipboardState;
 const characterSegmenter = typeof Intl.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
 
 function passphraseLength(value: string) {
@@ -67,6 +72,18 @@ export default function PasswordVault({ scope, language }: { scope: string; lang
   const [error, setError] = useState("");
   const [available, setAvailable] = useState(true);
   const revision = useRef(0);
+  const clipboardState = useSyncExternalStore(subscribeClipboard, clipboardSnapshot, serverClipboardSnapshot);
+  const [copyBusy, setCopyBusy] = useState(false);
+  useEffect(() => {
+    if (!revealed) return;
+    const timer = setTimeout(() => setRevealed(null), 60_000);
+    return () => clearTimeout(timer);
+  }, [revealed]);
+  const copyPassword = async (value: string) => {
+    setCopyBusy(true);
+    try { await passwordClipboard().copy(value); }
+    finally { setCopyBusy(false); }
+  };
 
   const lock = useCallback(() => {
     revision.current += 1;
@@ -235,6 +252,14 @@ export default function PasswordVault({ scope, language }: { scope: string; lang
       {session && <button type="button" className="secondary-button" onClick={lock}>{ui("ล็อกคลัง", "Lock vault")}</button>}
     </header>
     {error && <p className="feature-error" role="alert">{error}</p>}
+    {clipboardState.status !== "idle" && <div className="vault-clipboard-status" role="status">
+      <span>{clipboardState.status === "copied" ? ui("คัดลอกแล้ว · จะพยายามล้างคลิปบอร์ดใน 1 นาที", "Copied · will attempt to clear the clipboard in 1 minute")
+        : clipboardState.status === "cleared" ? ui("ล้างคลิปบอร์ดแล้ว", "Clipboard cleared")
+        : clipboardState.status === "changed" ? ui("คลิปบอร์ดเปลี่ยนเป็นข้อมูลอื่นแล้ว", "Clipboard contains something else now")
+        : clipboardState.status === "error" ? ui("คัดลอกไม่สำเร็จ กรุณาอนุญาตคลิปบอร์ดหรือเปิดผ่าน HTTPS", "Copy failed. Allow clipboard access and use HTTPS.")
+        : ui("ครบ 1 นาทีแล้ว แต่เบราว์เซอร์ไม่อนุญาตให้ล้างอัตโนมัติ กรุณากดล้างคลิปบอร์ด", "One minute elapsed, but automatic clearing was blocked. Clear the clipboard manually.")}</span>
+      {(clipboardState.status === "copied" || clipboardState.status === "blocked") && <button type="button" className="secondary-button" onClick={() => void passwordClipboard().clear()}>{ui("ล้างคลิปบอร์ด", "Clear clipboard")}</button>}
+    </div>}
     {saved === undefined ? <p role="status">{ui("กำลังเปิดคลัง…", "Loading vault…")}</p> : !available ? <p role="alert">{ui("ต้องเปิดผ่าน HTTPS และอนุญาตให้เบราว์เซอร์จัดเก็บข้อมูล", "Use HTTPS and allow browser storage to open the vault.")}</p> : !session ? <section className="feature-card vault-lock-card">
       <h2>{backup ? ui("กู้คืนจากไฟล์เข้ารหัส", "Restore an encrypted file") : creating ? ui("ตั้งรหัสหลัก", "Set a master passphrase") : ui("ปลดล็อกคลัง", "Unlock the vault")}</h2>
       <p>{creating ? ui("ตั้งข้อความสำหรับเข้าดูรหัสในคลังอย่างน้อย 16 ตัวอักษร ใช้ภาษาไทย ภาษาอังกฤษ ตัวเลข และเว้นวรรคได้ ถ้าลืมรหัสหลักจะเปิดไฟล์สำรองไม่ได้", "Set a master password of at least 16 characters to open your vault. You can use Thai or English letters, numbers, and spaces. You need it to open your backup.") : ui("คลังจะล็อกเมื่อสลับออกจากแอปหรือไม่มีการใช้งาน 2 นาที", "The vault locks when you leave the app or after two minutes of inactivity.")}</p>
@@ -284,7 +309,7 @@ export default function PasswordVault({ scope, language }: { scope: string; lang
               <button type="button" className="secondary-button" disabled={busy} onClick={() => { setDraft(item); setRevealed(null); setRemoveId(null); }}>{ui("แก้ไข", "Edit")}</button>
               <button type="button" className="secondary-button" disabled={busy} onClick={() => setRemoveId(item.id)}>{ui("ลบ", "Delete")}</button>
             </div>
-            {revealed === item.id && <code className="vault-revealed">{item.password}</code>}
+            <div className="vault-password-copy-row"><code className="vault-revealed">{revealed === item.id ? item.password : "••••••••••••"}</code><button type="button" className="secondary-button" disabled={copyBusy} aria-label={ui("คัดลอกรหัสผ่าน ", "Copy password for ") + item.name} onClick={() => void copyPassword(item.password)}><Icon name="copy" size={17}/>{ui("คัดลอก", "Copy")}</button></div>
             {removeId === item.id && <div className="feature-actions"><span>{ui("ลบรหัสผ่านรายการนี้?", "Delete this login?")}</span><button type="button" className="danger-button" disabled={busy} onClick={() => void update(session.records.filter((record) => record.id !== item.id))}>{ui("ยืนยันลบ", "Confirm deletion")}</button><button type="button" className="secondary-button" onClick={() => setRemoveId(null)}>{ui("ยกเลิก", "Cancel")}</button></div>}
           </li>;
         })}

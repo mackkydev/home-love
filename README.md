@@ -66,3 +66,7 @@ on conflict do nothing;
 Medicine reminders and calendar alerts use Web Push. Configure `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `SUPABASE_SECRET_KEY`, and `NOTIFICATION_CRON_SECRET` in Vercel (see `.env.example`). Generate one VAPID key pair with `web-push generate-vapid-keys`. Keep the private key and cron secret server-side.
 
 Apply `supabase/migrations/20261010_push_notifications.sql` in the Supabase SQL Editor. Create a Vault secret named `push_cron_secret` containing the same value as `NOTIFICATION_CRON_SECRET`, then run `supabase/setup_push_scheduler.sql`. The Supabase scheduler calls the protected Vercel endpoint every minute. Users must install the PWA and allow notifications; on iOS this requires an iOS version with Home Screen Web Push support. The phone controls notification sound and silent mode.
+
+## Admin accounts and household quotas
+
+See [setup and operation guide](docs/admin-management.md) before deploying this version. Apply the admin accounts migration and configure the server-only Supabase key before enabling the new upload API.

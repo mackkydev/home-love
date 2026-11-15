@@ -1,3 +1,4 @@
+import { usageError, type HouseholdEntitlements } from "./usage-limits";
 import { createClient } from "@supabase/supabase-js";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -161,39 +162,42 @@ async function visibleAsset(path: string) {
   return data.signedUrl;
 }
 
-async function storedAsset(value: string, pathPrefix: string, fileName: string, mimeType: string) {
+async function storedAsset(value: string, pathPrefix: string, fileName: string, mimeType: string, uploaded: string[]) {
   if (!cloud) throw new Error("Supabase is not configured");
   if (value.startsWith("storage:")) return value.slice(8);
   const knownPath = assetPaths.get(value);
   if (knownPath) return knownPath;
   if (!value.startsWith("data:")) throw new Error("Unknown attachment source");
   const blob = await (await fetch(value)).blob();
-  if (blob.size > 1024 * 1024) throw new Error("ไฟล์แนบใหญ่เกิน 1 MB");
-  const extension = mimeType === "application/pdf" ? "pdf" : "jpg";
-  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-40) || `file.${extension}`;
-  const path = `${pathPrefix}/${crypto.randomUUID()}-${safeName}`;
-  const { error } = await cloud.storage.from(bucket).upload(path, blob, { contentType: mimeType, upsert: false });
-  if (error) throw error;
+  const { data: sessionData } = await cloud.auth.getSession();
+  if (!sessionData.session) throw new Error("กรุณาเข้าสู่ระบบใหม่");
+  const [householdId, entryId] = pathPrefix.split("/");
+  const form = new FormData();
+  form.set("householdId", householdId); form.set("entryId", entryId);
+  form.set("file", new Blob([blob], { type: mimeType }), fileName);
+  const response = await fetch("/api/household-files", { method: "POST", headers: { Authorization: "Bearer " + sessionData.session.access_token }, body: form });
+  const result = await response.json();
+  if (!response.ok || !result.path) throw new Error(result.error || "อัปโหลดไม่สำเร็จ");
+  const path = result.path as string;
+  uploaded.push(path);
   assetPaths.set(value, path);
   return path;
 }
 
-async function prepareEntry<T extends CloudEntry>(entry: T, householdId: string): Promise<T> {
+async function prepareEntry<T extends CloudEntry>(entry: T, householdId: string, uploaded: string[]): Promise<T> {
   const data = { ...entry };
   const prefix = `${householdId}/${entry.id}`;
   if (entry.photos?.length) {
-    data.photos = await Promise.all(entry.photos.map(async (photo, index) => `storage:${await storedAsset(photo, prefix, `photo-${index}.jpg`, "image/jpeg")}`));
+    data.photos = [];
+    for (const [index, photo] of entry.photos.entries()) data.photos.push("storage:" + await storedAsset(photo, prefix, "photo-" + index + ".jpg", "image/jpeg", uploaded));
     data.photo = data.photos[0];
   } else if (entry.photo) {
-    data.photo = `storage:${await storedAsset(entry.photo, prefix, "photo-0.jpg", "image/jpeg")}`;
+    data.photo = `storage:${await storedAsset(entry.photo, prefix, "photo-0.jpg", "image/jpeg", uploaded)}`;
     data.photos = [data.photo];
   }
   if (entry.attachments?.length) {
-    data.attachments = await Promise.all(entry.attachments.map(async (file) => ({
-      name: file.name,
-      type: file.type,
-      data: `storage:${await storedAsset(file.data, prefix, file.name, file.type)}`,
-    })));
+    data.attachments = [];
+    for (const file of entry.attachments) data.attachments.push({ name: file.name, type: file.type, data: "storage:" + await storedAsset(file.data, prefix, file.name, file.type, uploaded) });
   }
   return data;
 }
@@ -300,9 +304,38 @@ export async function openHousehold<T extends CloudEntry>(selectedId?: string): 
   };
 }
 
+
+export async function removeUnusedHouseholdAssets(householdId: string, paths: string[]): Promise<void> {
+ if (!cloud) throw new Error("Supabase is not configured");
+ const unique = [...new Set(paths)];
+ for (let index=0;index<unique.length;index+=100) {
+  const { data: unused, error } = await cloud.rpc("unused_household_files", { target_household: householdId, candidate_paths: unique.slice(index,index+100) });
+  if (error) throw new Error(usageError(error));
+  if (!unused?.length) continue;
+  const { error: removeError } = await cloud.storage.from(bucket).remove(unused);
+  if (removeError) throw new Error(usageError(removeError));
+  const removed = new Set<string>(unused);
+  for (const [value,path] of assetPaths) if (removed.has(path)) assetPaths.delete(value);
+ }
+}
+export async function getMyAccess(): Promise<{enabled:boolean;reason:string}> {
+ if(!cloud) return {enabled:true,reason:""};
+ const {data,error}=await cloud.rpc("get_my_access");
+ if(error) throw new Error(usageError(error));
+ return data;
+}
+export async function getHouseholdEntitlements(householdId:string):Promise<HouseholdEntitlements> {
+ if(!cloud) throw new Error("Supabase is not configured");
+ const {data,error}=await cloud.rpc("get_household_entitlements",{target_household:householdId});
+ if(error) throw new Error(usageError(error));
+ return data as HouseholdEntitlements;
+}
 export async function saveHousehold<T extends CloudEntry>(householdId: string, entries: T[], categories: CloudCategory[], previous: CloudSnapshot<T>): Promise<CloudSnapshot<T>> {
   if (!cloud) throw new Error("Supabase is not configured");
-  const prepared = await Promise.all(entries.map((entry) => prepareEntry(entry, householdId)));
+  const uploaded: string[] = [];
+  try {
+  const prepared: T[] = [];
+  for (const entry of entries) prepared.push(await prepareEntry(entry, householdId, uploaded));
   const nextEntryVersions = new Map(prepared.map((entry) => [entry.id, JSON.stringify(entry)]));
   const nextCategoryVersions = new Map(categories.map((item) => [item.name, JSON.stringify(item)]));
   const changed = prepared.filter((entry) => previous.entryVersions.get(entry.id) !== nextEntryVersions.get(entry.id));
@@ -329,9 +362,12 @@ export async function saveHousehold<T extends CloudEntry>(householdId: string, e
   const oldPaths = new Set([...previous.entryVersions.values()].flatMap((version) => entryAssetPaths(JSON.parse(version) as T, householdId)));
   const retainedPaths = new Set(prepared.flatMap((entry) => entryAssetPaths(entry, householdId)));
   const orphanedPaths = [...oldPaths].filter((path) => !retainedPaths.has(path));
-  for (let index = 0; index < orphanedPaths.length; index += 100) {
-    const { error } = await cloud.storage.from(bucket).remove(orphanedPaths.slice(index, index + 100));
-    if (error) throw error;
-  }
+  await removeUnusedHouseholdAssets(householdId, orphanedPaths);
   return { entries, categories, entryVersions: nextEntryVersions, categoryVersions: nextCategoryVersions };
+  } catch (cause) {
+    // Query persisted references before cleanup: a timed-out upsert might have committed.
+    try { await removeUnusedHouseholdAssets(householdId, uploaded); }
+    catch { throw new Error(usageError(cause) + " · มีไฟล์ค้างที่ต้องคืนพื้นที่ กรุณาลองบันทึกอีกครั้ง"); }
+    throw new Error(usageError(cause));
+  }
 }

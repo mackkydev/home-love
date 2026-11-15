@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Thai } from "next/font/google";
 import "./globals.css";
+import AccountAccessGate from "./AccountAccessGate";
 
 const notoThai = Noto_Sans_Thai({
   variable: "--font-noto-thai",
@@ -34,7 +35,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         if (accent === 'custom' && /^#[0-9a-f]{6}$/i.test(custom || '')) root.style.setProperty('--blue', custom);
       } catch (_) {}` }} /></head>
       <body>
-        {children}
+        <AccountAccessGate>{children}</AccountAccessGate>
         <div className="portrait-only-overlay" role="status" aria-live="polite">
           <div className="portrait-only-card">
             <span className="portrait-only-icon" aria-hidden="true">↻</span>

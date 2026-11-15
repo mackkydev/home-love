@@ -1,6 +1,7 @@
 export default function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true as const };
   const paths: Record<string, React.ReactNode> = {
+    copy: <><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></>,
     utensils: <><path d="M4 3v5a3 3 0 0 0 6 0V3M7 3v18M19 3c-3 2-4 6-4 10h4m0-10v18"/></>,
     mountain: <><path d="m2 20 7-12 4 7 3-5 6 10H2Z"/><circle cx="17" cy="5" r="2"/></>,
     cup: <><path d="M4 9h13v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V9Zm13 1h2a2 2 0 0 1 0 4h-2M8 3v3m4-3v3"/></>,
