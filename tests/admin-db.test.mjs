@@ -109,7 +109,10 @@ test('member and owned-home limits, last-owner protection and rollback',async()=
   assert.equal((await value('select public.admin_list_households()')).houses.length,1);
 });
 test('upload reservations serialize total usage; clients cannot reserve or bypass upload API',async()=>{
+  await db.exec('reset role');
+  assert.equal(await value("select relrowsecurity from pg_class where oid='private.upload_reservations'::regclass"),true);
   await configure({max_storage_bytes:100,max_file_bytes:80});await actor(user);
+  await assert.rejects(db.query('select * from private.upload_reservations'),/permission denied/);
   await assert.rejects(db.query('select public.reserve_household_upload($1,$2,$3,70)',[user,house,house+'/a.jpg']),/permission denied/);
   await assert.rejects(db.query("insert into storage.objects(bucket_id,name,metadata) values('household-files',$1,'{\"size\":70}')",[house+'/a.jpg']),/row-level security/);
   await actor('', 'service_role');

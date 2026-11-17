@@ -36,6 +36,9 @@ create table private.upload_reservations (
  created_at timestamptz not null default now()
 );
 create index on private.upload_reservations(household_id);
+-- Only the guarded SECURITY DEFINER functions manage reservations.
+alter table private.upload_reservations enable row level security;
+revoke all on private.upload_reservations from public, anon, authenticated;
 create table public.admin_audit_log (
  id bigint generated always as identity primary key,
  actor_id uuid references auth.users(id),
