@@ -1424,3 +1424,16 @@ body{font-size:17px}
 .vault-password-copy-row button {flex:none;}
 .vault-clipboard-status {display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:13px;line-height:1.6;}
 .vault-clipboard-status span {flex:1;min-width:200px;}
+
+/* Render outside scrollable forms and fit the visible viewport, including the keyboard. */
+.date-picker-popover.date-picker-floating { position: fixed; right: auto; z-index: 250; box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; animation: none; }
+.date-picker-floating .calendar-days, .date-picker-floating .calendar-weekdays { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.date-picker-floating .calendar-day { min-width: 0; }
+.form-row > .form-label, .date-picker { min-width: 0; }
+.person-filter { display: flex; align-items: center; gap: 12px; min-width: 0; margin-top: 16px; }
+.person-filter > strong { flex: none; font-size: 13px; color: var(--muted); }
+.person-filter-tabs { display: flex; gap: 8px; min-width: 0; overflow-x: auto; padding: 4px 2px 8px; }
+.person-filter-tabs button { display: inline-flex; align-items: center; gap: 8px; flex: none; max-width: 260px; overflow-wrap: anywhere; min-height: 40px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--ink); font-size: 13px; }
+.person-filter-tabs button.selected { background: color-mix(in srgb, var(--blue) 12%, var(--surface)); border-color: var(--blue); color: var(--blue); font-weight: 700; }
+.person-filter-tabs button span { flex: none; font-size: 11px; opacity: .75; }
+.person-filter-tabs button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cloud, cloudEnabled, createHouseholdInvite, createPortableBackup, getProfilePhotoUrl, isAppAdmin, joinHousehold, listHouseholdPeople, listHouseholds, openHousehold, renameHousehold, saveHousehold, type CloudSnapshot, type Household, type HouseholdPerson } from "@/lib/cloud";
 import CloudAuth from "./CloudAuth";
@@ -10,6 +10,8 @@ import PinLock from "./PinLock";
 import TravelPage from "./TravelPage";
 import PasswordVault from "./PasswordVault";
 import Icon from "./Icon";
+import { datePickerPosition } from "@/lib/date-picker-position";
+import { recordPerson, recordPeople } from "@/lib/record-people";
 import PlacesPage, { PlaceDetail, PlaceEditor, PlaceRow } from "./PlacesPage";
 import { isPlaceRecord, placesCategory, type PlaceGroup, type PlaceInfo, type PlaceRecord } from "@/lib/places";
 import { currentTravelEntries, isInTrip, travelSelection, type CalendarInfo, type TravelInfo, type TravelRecord, type TravelSelection } from "@/lib/travel";
@@ -353,6 +355,7 @@ export default function Home() {
   const [notificationPreferences, setNotificationPreferences] = useState<Record<string, boolean>>({});
   const [category, setCategory] = useState("ทั้งหมด");
   const [endingSoon, setEndingSoon] = useState(false);
+  const [personFilter, setPersonFilter] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [form, setForm] = useState({ name: "", category: "ของใช้ในบ้าน", transaction: "expense" as "income" | "expense", price: "", purchaseQuantity: "1", purchaseUnit: "ชิ้น", stockAddedQuantity: "", total: "", unit: "ครั้ง", note: "", store: "", forPerson: "", paidDate: "", startDate: "", medMeals: [] as string[], medFoodTiming: "", medFrequencyHours: "", medDose: "", medDoseUnit: "เม็ด", medDetails: "", medPurpose: "", packageBaseUnit: "เม็ด", packageInnerUnit: "แผง", packageUnitsPerInner: "10", packageOuterUnit: "กล่อง", packageInnersPerOuter: "6", medReminders: [] as NonNullable<MedicineInstructions["reminders"]>, useReminders: false, photos: [] as string[], attachments: [] as Attachment[], trackStock: false, stockQuantity: "", stockDailyUse: "", stockUnit: "เม็ด", stockAutoDeduct: false, alertDays: "3", serviceAutoDeduct: false, serviceAutoAmount: "1", serviceAutoEveryDays: "1" });
   const [shoppingDialog, setShoppingDialog] = useState<"add" | "edit" | null>(null);
@@ -463,6 +466,7 @@ export default function Home() {
     activeHouseholdRef.current = id;
     setHouseholds(list);
     setHouseholdId(id);
+    setPersonFilter(null);
     const savedEntries = localStorage.getItem("baanjai-entries-v1");
     const savedCategories = localStorage.getItem("baanjai-categories-v1");
     let localEntries: Entry[] = [];
@@ -1128,7 +1132,14 @@ export default function Home() {
     { id: "settings", label: ui("ตั้งค่า", "Settings"), icon: "settings" },
   ];
   const shoppingEntries = filteredEntries.filter((entry) => entry.kind === "shopping" && (shoppingView === "completed" ? Boolean(entry.shopping?.completedAt) : !entry.shopping?.completedAt) && (shoppingView !== "completed" || (!shoppingHistoryDate || entry.shopping?.completedAt === shoppingHistoryDate) && `${entry.name} ${entry.note ?? ""} ${(entry.purchases ?? []).map((purchase) => `${purchase.store} ${purchase.unit}`).join(" ")}`.toLocaleLowerCase().includes(shoppingHistorySearch.trim().toLocaleLowerCase())));
-  const displayEntries = category === "รายการที่ต้องซื้อ" ? shoppingEntries : search.trim() ? filteredEntries : tab === "services" ? filteredEntries.filter((entry) => entry.kind === "service") : tab === "items" ? filteredEntries.filter((entry) => entry.kind === "item" || entry.kind === "note" || entry.kind === "shopping" || isPlaceRecord(entry)) : tab === "history" ? filteredEntries : [];
+  const listEntries = category === "รายการที่ต้องซื้อ" ? shoppingEntries : search.trim() ? filteredEntries : tab === "services" ? filteredEntries.filter((entry) => entry.kind === "service") : tab === "items" ? filteredEntries.filter((entry) => entry.kind === "item" || entry.kind === "note" || entry.kind === "shopping" || isPlaceRecord(entry)) : tab === "history" ? filteredEntries : [];
+  const peopleScope = entries.filter((entry) => entry.kind !== "calendar"
+    && (category === "รายการที่ต้องซื้อ" ? entry.kind === "shopping" : search.trim() || category === "ทั้งหมด" || entry.category === category || category === "การเงิน" && isFinanceRecord(entry))
+    && (tab !== "services" || entry.kind === "service"));
+  const peopleOptions = recordPeople(peopleScope, entries);
+  const hasPeople = peopleOptions.some(([person]) => person !== "");
+  const activePerson = hasPeople && peopleOptions.some(([person]) => person === personFilter) ? personFilter : null;
+  const displayEntries = activePerson === null ? listEntries : listEntries.filter((entry) => recordPerson(entry, entries) === activePerson);
   const activeCategory = [...categories, ...extraCategories].find((item) => item.name === category) ?? categories[0];
   const purchaseTargetEntry = editingEntry?.kind === "item" ? editingEntry : entries.find((entry) => entry.id === entries.find((item) => item.id === shoppingTargetId)?.shopping?.linkedEntryId && entry.kind === "item");
   const purchasePackaging = packagingForEntry(purchaseTargetEntry);
@@ -1136,8 +1147,9 @@ export default function Home() {
   const formPurchaseTotal = Math.max(0, Number(form.purchaseQuantity) || 0) * Math.max(0, Number(form.price) || 0);
   const formCalculatedStock = packagingStockAmount(purchaseTargetEntry, Number(form.purchaseQuantity), form.purchaseUnit);
   const selectedPurchaseTotal = shoppingHistoryDate ? shoppingEntries.reduce((sum, entry) => sum + (entry.purchases?.[0]?.price ?? 0), 0) : 0;
-  const openCategory = (name: string) => { setSearch(""); setEndingSoon(false); if (name === "รายการที่ต้องซื้อ") { setShoppingView("pending"); setShoppingHistorySearch(""); setShoppingHistoryDate(""); } setCategory(name); setTab(name === "บันทึกแจ้งเตือน" ? "calendar" : name === "บริการ" ? "services" : name === placesCategory ? "places" : "items"); };
+  const openCategory = (name: string) => { setPersonFilter(null); setSearch(""); setEndingSoon(false); if (name === "รายการที่ต้องซื้อ") { setShoppingView("pending"); setShoppingHistorySearch(""); setShoppingHistoryDate(""); } setCategory(name); setTab(name === "บันทึกแจ้งเตือน" ? "calendar" : name === "บริการ" ? "services" : name === placesCategory ? "places" : "items"); };
   const openTab = (next: Tab) => {
+    setPersonFilter(null);
     setShowMore(false);
     setSearch("");
     setEndingSoon(false);
@@ -1258,7 +1270,14 @@ export default function Home() {
         </> : <>
           {category === "รายการที่ต้องซื้อ" && shoppingView === "completed" && shoppingHistoryDate && <div className="shopping-day-total"><span>{ui(`ยอดซื้อรวมวันที่ ${dateLabel(shoppingHistoryDate, language)}`, `Total purchased on ${dateLabel(shoppingHistoryDate, language)}`)}</span><strong>฿{currency(selectedPurchaseTotal)}</strong></div>}
           <section className="list-category-title" aria-label={ui("หมวดหมู่ที่กำลังดู", "Current category")}><span className="list-category-title-icon"><Icon name={activeCategory.icon} size={20}/></span><span><small>{ui("หมวดหมู่", "Category")}</small><strong>{categoryLabel(activeCategory.name, language)}</strong></span></section>
-          {category !== "รายการที่ต้องซื้อ" && <><section className="filter-bar"><label className="search-field"><Icon name="search" size={19}/><input placeholder={ui("ค้นหาชื่อรายการหรือหมวดหมู่...", "Search records or categories...")} value={search} onChange={(event) => { setSearch(event.target.value); setEndingSoon(false); }}/><kbd>⌘ K</kbd></label><button className="filter-button" onClick={() => { setSearch(""); setCategory("ทั้งหมด"); setEndingSoon(false); }}><Icon name="grid" size={16}/> {ui("ล้างตัวกรอง", "Clear filters")}</button></section><div className="filter-chips" ref={filterChipsRef}><button type="button" className={`filter-chip ${endingSoon ? "selected" : ""}`} aria-pressed={endingSoon} onClick={() => { setEndingSoon((current) => !current); if (tab === "services") setTab("items"); }}><Icon name="bell" size={14}/> {ui("กำลังจะหมด", "Running out soon")}</button>{[...categories, ...extraCategories].map(({ name, icon }) => <button type="button" key={name} className={`filter-chip ${category === name ? "selected" : ""}`} aria-pressed={category === name} onClick={() => openCategory(name)}><Icon name={icon} size={14}/> {categoryLabel(name, language)}</button>)}</div></>}
+          {category !== "รายการที่ต้องซื้อ" && <><section className="filter-bar"><label className="search-field"><Icon name="search" size={19}/><input placeholder={ui("ค้นหาชื่อรายการหรือหมวดหมู่...", "Search records or categories...")} value={search} onChange={(event) => { setSearch(event.target.value); setEndingSoon(false); }}/><kbd>⌘ K</kbd></label><button className="filter-button" onClick={() => { setSearch(""); setCategory("ทั้งหมด"); setEndingSoon(false); setPersonFilter(null); }}><Icon name="grid" size={16}/> {ui("ล้างตัวกรอง", "Clear filters")}</button></section><div className="filter-chips" ref={filterChipsRef}><button type="button" className={`filter-chip ${endingSoon ? "selected" : ""}`} aria-pressed={endingSoon} onClick={() => { setEndingSoon((current) => !current); if (tab === "services") setTab("items"); }}><Icon name="bell" size={14}/> {ui("กำลังจะหมด", "Running out soon")}</button>{[...categories, ...extraCategories].map(({ name, icon }) => <button type="button" key={name} className={`filter-chip ${category === name ? "selected" : ""}`} aria-pressed={category === name} onClick={() => openCategory(name)}><Icon name={icon} size={14}/> {categoryLabel(name, language)}</button>)}</div></>}
+          {hasPeople && <section className="person-filter" aria-label={ui("กรองตามคนใช้", "Filter by person")}>
+            <strong>{ui("คนใช้", "For whom")}</strong>
+            <div className="person-filter-tabs" role="group" aria-label={ui("เลือกคนใช้", "Choose a person")}>
+              <button type="button" className={activePerson === null ? "selected" : ""} aria-pressed={activePerson === null} onClick={() => setPersonFilter(null)}>{ui("ทั้งหมด", "All")}</button>
+              {peopleOptions.map(([person, count]) => <button type="button" key={person} className={activePerson === person ? "selected" : ""} aria-pressed={activePerson === person} onClick={() => setPersonFilter(person)}>{person || ui("ไม่ระบุคนใช้", "Unassigned")}<span>{count}</span></button>)}
+            </div>
+          </section>}
           <section className="section-block list-page"><div className="section-heading"><div><h2>{category === "รายการที่ต้องซื้อ" ? ui("รายการที่ต้องซื้อ", "Shopping list") : endingSoon ? ui("รายการที่กำลังจะหมด", "Running low") : tab === "services" ? ui("สิทธิ์และบริการ", "Services") : tab === "items" ? ui("รายการของในบ้าน", "Household records") : ui("ประวัติทั้งหมด", "All history")}</h2><p>{ui("พบ", "Found")} {displayEntries.length} {ui("รายการ", "records")}</p></div>{category === "รายการที่ต้องซื้อ" ? <button type="button" className="primary-button" onClick={openShoppingAdd}>＋ {ui("เพิ่มที่ต้องซื้อ", "Add to buy")}</button> : <button type="button" className="primary-button desktop-add" onClick={openCurrentForm}>＋ {copy.add}</button>}</div>{category === "รายการที่ต้องซื้อ" && <><div className="shopping-list-tabs" role="tablist" aria-label={ui("สถานะรายการที่ต้องซื้อ", "Shopping list status")}><button type="button" role="tab" aria-selected={shoppingView === "pending"} className={shoppingView === "pending" ? "selected" : ""} onClick={() => setShoppingView("pending")}>{ui("ยังไม่ได้ซื้อ", "To buy")}<span>{entries.filter((entry) => entry.kind === "shopping" && !entry.shopping?.completedAt).length}</span></button><button type="button" role="tab" aria-selected={shoppingView === "completed"} className={shoppingView === "completed" ? "selected" : ""} onClick={() => setShoppingView("completed")}>{ui("ซื้อแล้ว", "Purchased")}<span>{entries.filter((entry) => entry.kind === "shopping" && entry.shopping?.completedAt).length}</span></button></div>{shoppingView === "completed" && <div className="shopping-history-filters"><label className="search-field"><Icon name="search" size={18}/><input value={shoppingHistorySearch} onChange={(event) => setShoppingHistorySearch(event.target.value)} placeholder={ui("ค้นหาชื่อสินค้า ร้าน หรือหน่วย...", "Search item, store, or unit...")}/></label><div className="shopping-history-date"><DatePicker value={shoppingHistoryDate} onChange={setShoppingHistoryDate} language={language} placeholder={ui("เลือกวันที่ซื้อ", "Purchase date")}/></div>{(shoppingHistorySearch || shoppingHistoryDate) && <button type="button" className="shopping-filter-clear" onClick={() => { setShoppingHistorySearch(""); setShoppingHistoryDate(""); }}>{ui("ล้าง", "Clear")}</button>}</div>}</>}<div className="recent-list">{displayEntries.length ? displayEntries.map((entry) => endingSoon && entry.stock ? <LowStockRow key={entry.id} entry={entry} language={language} pending={pendingShoppingByItem.get(entry.id)} onOpen={() => openDetail(entry.id)} onShopping={() => { const pending = pendingShoppingByItem.get(entry.id); if (pending) openDetail(pending.id); else addToShopping(entry); }}/> : isPlaceRecord(entry) ? <PlaceRow key={entry.id} entry={entry} language={language} onOpen={openDetail} onStar={togglePlaceStar}/> : entry.kind === "shopping" ? <ShoppingRow key={entry.id} entry={entry} language={language} onOpen={() => openDetail(entry.id)} onBuy={() => openShoppingBuy(entry)} onEdit={() => openShoppingEdit(entry)} onRemove={() => removeEntry(entry)}/> : <EntryRow key={entry.id} entry={entry} language={language} onOpen={() => openDetail(entry.id)} onConsume={() => consumed(entry)} onStockUse={() => recordStockUse(entry)} onEdit={() => editEntry(entry)} onRenew={() => renewService(entry)} onAddToShopping={() => addToShopping(entry)} onBuyAgain={() => buyAgain(entry)} onRemove={() => removeEntry(entry)} onProgressStyle={(style) => setEntries((prev) => prev.map((item) => item.id === entry.id ? { ...item, progressStyle: style } : item))}/>) : <div className="empty-state"><span><Icon name={category === "รายการที่ต้องซื้อ" ? "cart" : "package"} size={27}/></span><strong>{category === "รายการที่ต้องซื้อ" ? shoppingView === "completed" ? ui("ยังไม่มีรายการที่ซื้อแล้ว", "No purchased items yet") : ui("ยังไม่มีรายการที่ต้องซื้อ", "Shopping list is empty") : endingSoon ? ui("ยังไม่มีรายการที่กำลังจะหมด", "Nothing is running out soon") : ui("ยังไม่มีรายการในหมวดนี้", "No records in this category")}</strong><p>{category === "รายการที่ต้องซื้อ" ? shoppingView === "completed" ? ui("ประวัติจะปรากฏหลังจากกดซื้อแล้ว", "Purchased items will appear here") : ui("เพิ่มสินค้าเพื่อเตรียมรายการซื้อครั้งถัดไป", "Add an item for your next shopping trip") : endingSoon ? ui("รายการจะปรากฏเมื่ออยู่ในช่วงวันที่ตั้งแจ้งเตือน", "Records appear when they reach their alert window.") : ui("ลองเพิ่มบันทึกใหม่ หรือเลือกหมวดหมู่อื่น", "Add a record or choose another category.")}</p>{(category !== "รายการที่ต้องซื้อ" || shoppingView === "pending") && <button className="primary-button" onClick={openCurrentForm}>＋ {ui("เพิ่มรายการ", "Add record")}</button>}</div>}</div></section>
         </>}
         </>}
@@ -1667,15 +1686,47 @@ function DatePicker({ value, onChange, placeholder = "เลือกวัน�
   const [open, setOpen] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(2026, 9, 1));
   const rootRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const selectedDate = value ? new Date(`${value}T00:00:00`) : null;
   const todayDate = new Date();
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const position = () => {
+      const anchor = rootRef.current, popover = popoverRef.current;
+      if (!anchor || !popover) return;
+      const viewport = window.visualViewport;
+      const bounds = datePickerPosition(anchor.getBoundingClientRect(), popover.scrollHeight + 2, {
+        left: viewport?.offsetLeft ?? 0, top: viewport?.offsetTop ?? 0,
+        width: viewport?.width ?? document.documentElement.clientWidth,
+        height: viewport?.height ?? window.innerHeight,
+      });
+      Object.assign(popover.style, { left: `${bounds.left}px`, top: `${bounds.top}px`, width: `${bounds.width}px`, maxHeight: `${bounds.maxHeight}px` });
+    };
+    position();
+    const observer = new ResizeObserver(position);
+    if (popoverRef.current) observer.observe(popoverRef.current);
+    const onScroll = (event: Event) => { if (!popoverRef.current?.contains(event.target as Node)) position(); };
+    window.addEventListener("resize", position);
+    document.addEventListener("scroll", onScroll, true);
+    window.visualViewport?.addEventListener("resize", position);
+    window.visualViewport?.addEventListener("scroll", position);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", position);
+      document.removeEventListener("scroll", onScroll, true);
+      window.visualViewport?.removeEventListener("resize", position);
+      window.visualViewport?.removeEventListener("scroll", position);
+    };
+  }, [open, visibleMonth]);
 
   useEffect(() => {
     if (!open) return;
     const closeOnOutsideClick = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
+      if (!rootRef.current?.contains(event.target as Node) && !popoverRef.current?.contains(event.target as Node)) setOpen(false);
     };
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") { setOpen(false); triggerRef.current?.focus(); } };
     document.addEventListener("mousedown", closeOnOutsideClick);
     document.addEventListener("keydown", closeOnEscape);
     return () => {
@@ -1688,7 +1739,7 @@ function DatePicker({ value, onChange, placeholder = "เลือกวัน�
   const month = visibleMonth.getMonth();
   const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const monthLabel = visibleMonth.toLocaleDateString("th-TH", { month: "long", year: "numeric" });
+  const monthLabel = visibleMonth.toLocaleDateString(language === "en" ? "en-GB" : "th-TH", { month: "long", year: "numeric" });
   const isoDate = (day: number) => `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   const openPicker = () => {
     const base = selectedDate ?? todayDate;
@@ -1697,13 +1748,13 @@ function DatePicker({ value, onChange, placeholder = "เลือกวัน�
   };
 
   return <div className={`date-picker ${open ? "is-open" : ""}`} ref={rootRef}>
-    <button type="button" className="date-picker-trigger" aria-haspopup="dialog" aria-expanded={open} onClick={openPicker}><Icon name="calendar" size={16}/><span className={value ? "has-value" : "placeholder"}>{value ? dateLabel(value) : placeholder}</span><span className="date-picker-chevron"><Icon name="chevron" size={15}/></span></button>
-    {open && <div className="date-picker-popover" role="dialog" aria-label="เลือกวันที่">
+    <button ref={triggerRef} type="button" className="date-picker-trigger" aria-haspopup="dialog" aria-expanded={open} onClick={openPicker}><Icon name="calendar" size={16}/><span className={value ? "has-value" : "placeholder"}>{value ? dateLabel(value, language) : placeholder}</span><span className="date-picker-chevron"><Icon name="chevron" size={15}/></span></button>
+    {open && createPortal(<div ref={popoverRef} className="date-picker-popover date-picker-floating" role="dialog" aria-label={language === "en" ? "Choose a date" : "เลือกวันที่"}>
       <div className="date-picker-header"><button type="button" aria-label="เดือนก่อน" onClick={() => setVisibleMonth(new Date(year, month - 1, 1))}><Icon name="chevron" size={17}/></button><strong>{monthLabel}</strong><button type="button" aria-label="เดือนถัดไป" onClick={() => setVisibleMonth(new Date(year, month + 1, 1))}><Icon name="chevron" size={17}/></button></div>
       <div className="calendar-weekdays">{["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา"].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}</div>
-      <div className="calendar-days">{Array.from({ length: firstWeekday }, (_, index) => <span className="calendar-empty" key={`blank-${index}`}/>)}{Array.from({ length: daysInMonth }, (_, index) => { const day = index + 1; const date = isoDate(day); const selected = value === date; const today = todayDate.getFullYear() === year && todayDate.getMonth() === month && todayDate.getDate() === day; return <button type="button" key={date} className={`calendar-day ${selected ? "selected" : ""} ${today ? "today" : ""}`} aria-pressed={selected} onClick={() => { onChange(date); setOpen(false); }}>{day}</button>; })}</div>
-      {value && <button type="button" className="date-picker-clear" onClick={() => { onChange(""); setOpen(false); }}>ล้างวันที่</button>}
-    </div>}
+      <div className="calendar-days">{Array.from({ length: firstWeekday }, (_, index) => <span className="calendar-empty" key={`blank-${index}`}/>)}{Array.from({ length: daysInMonth }, (_, index) => { const day = index + 1; const date = isoDate(day); const selected = value === date; const today = todayDate.getFullYear() === year && todayDate.getMonth() === month && todayDate.getDate() === day; return <button type="button" key={date} className={`calendar-day ${selected ? "selected" : ""} ${today ? "today" : ""}`} aria-pressed={selected} onClick={() => { onChange(date); setOpen(false); triggerRef.current?.focus(); }}>{day}</button>; })}</div>
+      {value && <button type="button" className="date-picker-clear" onClick={() => { onChange(""); setOpen(false); triggerRef.current?.focus(); }}>{language === "en" ? "Clear date" : "ล้างวันที่"}</button>}
+    </div>, document.body)}
   </div>;
 }
 
