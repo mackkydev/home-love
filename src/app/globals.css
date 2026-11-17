@@ -1265,6 +1265,20 @@ body{font-size:17px}
 .vault-password-count.complete { color: #187345; }
 [data-theme="dark"] .vault-password-count { color: #ff9caa; }
 [data-theme="dark"] .vault-password-count.complete { color: #72df9c; }
+.password-input { position: relative; display: block; width: 100%; min-width: 0; }
+.form-label .password-input { margin-top: 6px; }
+.password-input input, .form-label .password-input input, .household-password-form .password-input input {
+  width: 100%; min-width: 0; max-width: 100%; margin: 0; padding-inline-end: 48px; box-sizing: border-box;
+}
+.password-input-toggle {
+  position: absolute; inset-inline-end: 2px; top: 50%; transform: translateY(-50%);
+  display: grid; place-items: center; width: 44px; height: 44px; padding: 0;
+  border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer;
+}
+.password-input-toggle:hover:not(:disabled) { background: var(--canvas); }
+.password-input-toggle:focus-visible { outline: 2px solid var(--blue); outline-offset: -3px; }
+.password-input-toggle:disabled { opacity: .5; cursor: default; }
+.password-input input::-ms-reveal { display: none; }
 .vault-password-input { position: relative; }
 .vault-password-input input { padding-inline-end: 48px; }
 .vault-password-toggle {
@@ -1437,3 +1451,81 @@ body{font-size:17px}
 .person-filter-tabs button.selected { background: color-mix(in srgb, var(--blue) 12%, var(--surface)); border-color: var(--blue); color: var(--blue); font-weight: 700; }
 .person-filter-tabs button span { flex: none; font-size: 11px; opacity: .75; }
 .person-filter-tabs button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* Member administration uses the same cards, controls and back navigation as settings. */
+.admin-console { min-width: 0; background: var(--canvas); }
+.admin-console-header { justify-content: flex-start; flex: none; background: var(--surface); }
+.admin-console-header > div { min-width: 0; }
+.admin-console-header h2 { overflow-wrap: anywhere; line-height: 1.35; }
+.admin-console-tabs { flex: none; min-width: 0; background: var(--surface); }
+.admin-console-body { min-height: 0; min-width: 0; width: 100%; }
+.admin-console-grid > section, .admin-editor, .admin-editor form, .admin-form-grid > *, .admin-meter-grid > * { min-width: 0; }
+.admin-editor { background: var(--surface); box-shadow: 0 6px 18px #1828490a; }
+.admin-editor h3, .admin-filter-note > span { overflow-wrap: anywhere; }
+.admin-filter-note > span { min-width: 0; }
+.admin-filter-note .text-button { flex: none; }
+.admin-console :is(input, select, textarea) { max-width: 100%; }
+.admin-editor .form-label :is(input, select, textarea) { width: 100%; }
+.admin-console .admin-status { flex: none; white-space: nowrap; }
+.admin-console .feature-actions { flex-wrap: wrap; }
+.admin-console :is(.primary-button, .secondary-button) { white-space: normal; overflow-wrap: anywhere; }
+.admin-member-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; }
+.admin-member-row > :is(span, select) { min-width: 0; width: 100%; }
+.admin-detail-back { display: none; }
+.household-people-heading { flex-wrap: wrap; gap: 10px; }
+.household-people-heading > div { min-width: 0; overflow-wrap: anywhere; }
+.household-person { display: grid; grid-template-columns: 37px minmax(0, 1fr) auto; }
+.household-person-copy { min-width: 0; }
+.household-person-copy :is(strong, small) { white-space: normal; overflow-wrap: anywhere; }
+.household-person-actions { grid-column: 2 / -1; min-width: 0; padding-left: 0; flex-wrap: wrap; }
+.household-person-actions select { min-width: min(130px, 100%); max-width: 100%; }
+
+@media (max-width: 760px) {
+  /* Match the exposed rubber-band area to the app header for every accent/palette. */
+  :root { --mobile-chrome: var(--blue); }
+  :root[data-theme="dark"] { --mobile-chrome: #151f35; }
+  html, html body, html .app-shell, html .main-column,
+  html[data-theme="dark"], html[data-theme="dark"] body,
+  html[data-theme="dark"] .app-shell, html[data-theme="dark"] .main-column {
+    background: var(--mobile-chrome);
+  }
+  html .topbar, html[data-theme="dark"] .topbar, html body::before { background: var(--mobile-chrome); }
+  html .content-area, html[data-theme="dark"] .content-area {
+    --page-glow-height: 275px;
+    background-color: var(--mobile-chrome);
+    background-image: linear-gradient(180deg, var(--mobile-chrome) 0px, color-mix(in srgb, var(--mobile-chrome) 74%, var(--canvas)) calc(var(--page-glow-height) * .34), color-mix(in srgb, var(--mobile-chrome) 25%, var(--canvas)) calc(var(--page-glow-height) * .73), var(--canvas) var(--page-glow-height));
+    background-attachment: local;
+    background-repeat: no-repeat;
+  }
+  html .is-list-view .content-area { --page-glow-height: 175px; }
+  .content-area::before { display: none; }
+  /* Paint the scroll container itself so its exposed top edge has the theme color. */
+  .admin-console-backdrop { align-items: stretch; }
+  .admin-console { width: 100%; max-width: 100%; height: 100dvh; max-height: 100dvh; border: 0; }
+  .admin-console-header { padding: calc(16px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left)); background: var(--mobile-chrome); color: #fff; }
+  .admin-console-header small { color: #ffffffcf; letter-spacing: 0; font-size: 12px; }
+  .admin-console-header h2 { margin-top: 3px; font-size: 21px; }
+  .admin-console-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 10px 16px; overflow: visible; }
+  .admin-console-tabs button { min-width: 0; padding: 10px 6px; font-size: 13px; overflow-wrap: anywhere; }
+  .admin-console-body { padding: 16px max(16px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+  .admin-console-grid { gap: 12px; }
+  .admin-console:not(.is-editing) .admin-console-grid > section:last-child { display: none; }
+  .admin-console.is-editing .admin-console-grid > section:first-child,
+  .admin-console.is-editing .admin-console-body > .admin-search { display: none; }
+  .admin-detail-back { display: inline-flex; margin-bottom: 14px; }
+  .admin-search input { flex-basis: 150px; }
+  .admin-pagination { flex-wrap: wrap; }
+  .admin-editor { padding: 16px; }
+  .admin-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .admin-member-row { grid-template-columns: minmax(0, 1fr) auto; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--canvas); }
+  .admin-member-row > span, .admin-member-row > select:first-child { grid-column: 1 / -1; }
+  .admin-member-add { flex-wrap: wrap; }
+  .admin-member-add .form-label { flex-basis: 100%; }
+  .admin-editor .feature-actions > button { width: 100%; }
+  .settings-card { min-width: 0; }
+}
+@media (max-width: 360px) {
+  .household-person { grid-template-columns: 37px minmax(0, 1fr); }
+  .household-person-role { grid-column: 2; justify-self: start; }
+  .household-person-actions { grid-column: 1 / -1; }
+}

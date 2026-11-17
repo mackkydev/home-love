@@ -1,4 +1,5 @@
 "use client";
+import PasswordInput from "./PasswordInput";
 
 import { useState, type FormEvent } from "react";
 import { cloud, verifyDevicePin } from "@/lib/cloud";
@@ -31,7 +32,7 @@ export default function PinLock({ language, onUnlock }: { language: "th" | "en";
     <h2>{en ? "Unlock this device" : "ปลดล็อกเครื่องนี้"}</h2>
     <p>{en ? "Enter the six-digit PIN set for your account." : "ใส่รหัส 6 หลักที่ตั้งไว้กับบัญชีของคุณ"}</p>
     <form onSubmit={(event) => void unlock(event)}>
-      <label className="form-label">{en ? "Six-digit PIN" : "รหัส 6 หลัก"}<input type="password" inputMode="numeric" pattern="[0-9]{6}" minLength={6} maxLength={6} autoComplete="off" required value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/></label>
+      <label className="form-label">{en ? "Six-digit PIN" : "รหัส 6 หลัก"}<PasswordInput language={language} inputMode="numeric" pattern="[0-9]{6}" minLength={6} maxLength={6} autoComplete="off" required value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/></label>
       <button className="primary-button" type="submit" disabled={busy || pin.length !== 6}>{busy ? (en ? "Checking..." : "กำลังตรวจสอบ...") : (en ? "Unlock" : "ปลดล็อก")}</button>
     </form>
     {error && <p className="cloud-error" role="alert">{error}</p>}

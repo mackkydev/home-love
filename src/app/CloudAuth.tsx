@@ -1,4 +1,5 @@
 "use client";
+import PasswordInput from "./PasswordInput";
 
 import { useEffect, useState, type FormEvent } from "react";
 import { cloud, getSignupMethods, getSignupOpen, type SignupMethods } from "@/lib/cloud";
@@ -102,8 +103,8 @@ export default function CloudAuth({
       <h2>{recoveryMode ? (en ? "Set a new password" : "ตั้งรหัสผ่านใหม่") : mode === "signup" ? (en ? "Register with password" : "สมัครด้วยรหัสผ่าน") : mode === "magic" ? signupOpen ? (en ? "Continue with email link" : "เข้าใช้ด้วยลิงก์อีเมล") : (en ? "Sign in with email link" : "เข้าสู่ระบบด้วยลิงก์อีเมล") : mode === "forgot" ? (en ? "Reset your password" : "ตั้งรหัสผ่านใหม่") : (en ? "Sign in" : "เข้าสู่ระบบ")}</h2>
       <form onSubmit={submit}>
         {!recoveryMode && <label className="form-label">{en ? "Email" : "อีเมล"}<input type="email" autoComplete="email" required placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)}/></label>}
-        {(recoveryMode || (mode !== "forgot" && mode !== "magic")) && <label className="form-label">{recoveryMode ? (en ? "New password" : "รหัสผ่านใหม่") : (en ? "Password" : "รหัสผ่าน")}<input type="password" autoComplete={mode === "login" && !recoveryMode ? "current-password" : "new-password"} minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)}/></label>}
-        {(recoveryMode || mode === "signup") && <label className="form-label">{en ? "Confirm password" : "ยืนยันรหัสผ่าน"}<input type="password" autoComplete="new-password" minLength={8} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)}/></label>}
+        {(recoveryMode || (mode !== "forgot" && mode !== "magic")) && <label className="form-label">{recoveryMode ? (en ? "New password" : "รหัสผ่านใหม่") : (en ? "Password" : "รหัสผ่าน")}<PasswordInput language={language} autoComplete={mode === "login" && !recoveryMode ? "current-password" : "new-password"} minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)}/></label>}
+        {(recoveryMode || mode === "signup") && <label className="form-label">{en ? "Confirm password" : "ยืนยันรหัสผ่าน"}<PasswordInput language={language} autoComplete="new-password" minLength={8} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)}/></label>}
         <button className="primary-button" type="submit" disabled={busy}>{busy ? (en ? "Please wait..." : "กรุณารอสักครู่...") : recoveryMode ? (en ? "Save new password" : "บันทึกรหัสผ่านใหม่") : mode === "signup" ? (en ? "Create account" : "สร้างบัญชี") : mode === "magic" ? (en ? "Send email link" : "ส่งลิงก์ทางอีเมล") : mode === "forgot" ? (en ? "Send reset link" : "ส่งลิงก์ตั้งรหัสผ่าน") : (en ? "Sign in" : "เข้าสู่ระบบ")}</button>
       </form>
       {message && <p className="cloud-auth-success" role="status">{message}</p>}

@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getSignupMethods, getSignupOpen, setSignupMethods, setSignupOpen, type SignupMethods } from "@/lib/cloud";
 import { adminRpc, listAdminHouses, listAdminUsers, type AdminHouse, type AdminUser, type Audit } from "@/lib/admin-api";
 import { MB, mb, usageError } from "@/lib/usage-limits";
-import Icon from "./Icon";
 
 function SignupSettings({ language }: { language: "th" | "en" }) {
   const [open, setOpen] = useState<boolean | null>(null);
@@ -132,6 +131,9 @@ export default function AdminPanel({ language, onClose }: { language: "th" | "en
  const [selectedHouse,setSelectedHouse]=useState<AdminHouse|null>(null); const [filterUser,setFilterUser]=useState<AdminUser|null>(null);
  const [loading,setLoading]=useState(true); const [busy,setBusy]=useState(false); const [error,setError]=useState(""); const [notice,setNotice]=useState("");
  const [revision,setRevision]=useState(0); const [newHouse,setNewHouse]=useState("");
+ const bodyRef=useRef<HTMLDivElement>(null);
+ const editing = tab === "users" ? selectedUser !== null : tab === "houses" && selectedHouse !== null;
+ const showDetail = () => bodyRef.current?.scrollTo({top:0});
  const reload=useCallback(()=>setRevision(v=>v+1),[]);
  useEffect(()=>{
   let active=true;
@@ -150,10 +152,11 @@ export default function AdminPanel({ language, onClose }: { language: "th" | "en
  const switchTab=(next:typeof tab)=>{setTab(next);setSearch("");setQuery("");setPage(0);setFilterUser(null);setSelectedUser(null);setSelectedHouse(null);setError("");setNotice("");setLoading(next!=="signup");};
  const userHomes=()=>{setFilterUser(selectedUser);setTab("houses");setQuery("");setSearch("");setPage(0);setSelectedHouse(null);setLoading(true);};
  return <div className="modal-backdrop admin-console-backdrop">
-  <section className="admin-console" role="dialog" aria-modal="true" aria-labelledby="admin-console-title">
-   <header className="admin-console-header"><div><small>HOME ORGANIZER · ADMIN</small><h2 id="admin-console-title">จัดการผู้ใช้และแพ็กเกจ</h2></div><button type="button" className="icon-button" onClick={onClose} aria-label="ปิดหน้าจัดการ"><Icon name="close"/></button></header>
+  <section className={`admin-console ${editing ? "is-editing" : ""}`} role="dialog" aria-modal="true" aria-labelledby="admin-console-title">
+   <header className="admin-console-header"><button type="button" className="settings-back" onClick={onClose} aria-label={language === "en" ? "Back to settings" : "กลับหน้าตั้งค่า"}>‹</button><div><small>{language === "en" ? "Our Home · Administration" : "บ้านของเรา · จัดการระบบ"}</small><h2 id="admin-console-title">{language === "en" ? "Members and households" : "จัดการสมาชิกและบ้าน"}</h2></div></header>
    <nav className="admin-console-tabs" aria-label="เมนูผู้ดูแล">{([["users","ผู้ใช้"],["houses","บ้านและโควตา"],["signup","การสมัครสมาชิก"],["audit","ประวัติแอดมิน"]] as const).map(([id,label])=><button type="button" key={id} className={tab===id?"selected":""} aria-pressed={tab===id} onClick={()=>switchTab(id)}>{label}</button>)}</nav>
-   <div className="admin-console-body">
+   <div className="admin-console-body" ref={bodyRef}>
+    {editing && <button type="button" className="admin-detail-back secondary-button" onClick={()=>{setSelectedUser(null);setSelectedHouse(null);setNotice("");showDetail();}}>‹ {language === "en" ? "Back to list" : "กลับไปรายชื่อ"}</button>}
     {error&&<p className="household-panel-error" role="alert">{error}</p>}{notice&&<p className="admin-success" role="status">{notice}</p>}
     {tab==="signup"?<SignupSettings language={language}/>:tab==="audit"?<section>{loading?<p role="status">กำลังโหลด…</p>:audit.length?audit.map(row=><article key={row.id} className="admin-audit-row"><strong>{row.action}</strong><span>{row.actor_email} · {new Date(row.created_at).toLocaleString("th-TH",{timeZone:"Asia/Bangkok"})}</span><small>{JSON.stringify(row.details)}</small></article>):<p>ยังไม่มีประวัติ</p>}</section>:<>
      {filterUser&&<div className="admin-filter-note"><span>บ้านของ {filterUser.email}</span><button type="button" className="text-button" onClick={()=>{setFilterUser(null);setPage(0);setSelectedHouse(null);}}>ดูทุกบ้าน</button></div>}
@@ -161,8 +164,8 @@ export default function AdminPanel({ language, onClose }: { language: "th" | "en
      {filterUser&&<form className="admin-search" onSubmit={e=>{e.preventDefault();void mutate(async()=>{await adminRpc("admin_create_household",{owner_user:filterUser.id,house_name:newHouse});setNewHouse("");});}}><input aria-label="ชื่อบ้านใหม่" placeholder="สร้างบ้านให้ผู้ใช้นี้" maxLength={60} required value={newHouse} onChange={e=>setNewHouse(e.target.value)}/><button type="submit" className="secondary-button" disabled={busy}>สร้างบ้าน</button></form>}
      <div className="admin-console-grid"><section>
       <p className="admin-help">{loading?"กำลังโหลด…":total+" "+(tab==="users"?"ผู้ใช้":"บ้าน")}</p>
-      {tab==="users"?users.map(u=><button type="button" key={u.id} className={"admin-list-row "+(selectedUser?.id===u.id?"selected":"")} disabled={busy} onClick={()=>{setSelectedUser(u);setNotice("");}}><span><strong>{u.display_name||u.email}</strong><small>{u.email}</small><small>{u.household_count} บ้าน {u.is_admin&&" · Admin"}</small></span><span className={"admin-status "+(u.enabled?"is-open":"is-closed")}>{u.enabled?"ใช้งาน":"ปิดอยู่"}</span></button>)
-       :houses.map(h=><button type="button" key={h.household_id} className={"admin-list-row "+(selectedHouse?.household_id===h.household_id?"selected":"")} disabled={busy} onClick={()=>{setSelectedHouse(h);setNotice("");}}><span><strong>{h.name}</strong><small>{h.plan_key} · {mb(h.storage_bytes)} / {mb(h.max_storage_bytes)} MB</small><small>{h.entry_count}/{h.max_entries} รายการ · {h.member_count} สมาชิก</small></span><span className={"admin-status "+(h.writable?"is-open":"is-closed")}>{!h.enabled?"ปิดอยู่":h.writable?"ใช้งาน":"อ่านเท่านั้น"}</span></button>)}
+      {tab==="users"?users.map(u=><button type="button" key={u.id} className={"admin-list-row "+(selectedUser?.id===u.id?"selected":"")} disabled={busy} onClick={()=>{setSelectedUser(u);setNotice("");showDetail();}}><span><strong>{u.display_name||u.email}</strong><small>{u.email}</small><small>{u.household_count} บ้าน {u.is_admin&&" · Admin"}</small></span><span className={"admin-status "+(u.enabled?"is-open":"is-closed")}>{u.enabled?"ใช้งาน":"ปิดอยู่"}</span></button>)
+       :houses.map(h=><button type="button" key={h.household_id} className={"admin-list-row "+(selectedHouse?.household_id===h.household_id?"selected":"")} disabled={busy} onClick={()=>{setSelectedHouse(h);setNotice("");showDetail();}}><span><strong>{h.name}</strong><small>{h.plan_key} · {mb(h.storage_bytes)} / {mb(h.max_storage_bytes)} MB</small><small>{h.entry_count}/{h.max_entries} รายการ · {h.member_count} สมาชิก</small></span><span className={"admin-status "+(h.writable?"is-open":"is-closed")}>{!h.enabled?"ปิดอยู่":h.writable?"ใช้งาน":"อ่านเท่านั้น"}</span></button>)}
       {!loading&&total===0&&<p>ไม่พบข้อมูล</p>}
       <div className="admin-pagination"><button type="button" className="secondary-button" disabled={page===0||loading||busy} onClick={()=>{setLoading(true);setPage(p=>p-1);}}>ก่อนหน้า</button><span>{page+1} / {Math.max(1,Math.ceil(total/25))}</span><button type="button" className="secondary-button" disabled={(page+1)*25>=total||loading||busy} onClick={()=>{setLoading(true);setPage(p=>p+1);}}>ถัดไป</button></div>
      </section>
