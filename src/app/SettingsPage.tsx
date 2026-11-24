@@ -1,5 +1,6 @@
 "use client";
 import PasswordInput from "./PasswordInput";
+import { pinError } from "@/lib/pin-errors";
 import HouseholdUsage from "./HouseholdUsage";
 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
@@ -87,6 +88,8 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
   const [confirmPin, setConfirmPin] = useState("");
   const [pinBusy, setPinBusy] = useState(false);
   const [pinMessage, setPinMessage] = useState("");
+  const [pinLoadError, setPinLoadError] = useState("");
+  const [pinRevision, setPinRevision] = useState(0);
   const [people, setPeople] = useState<HouseholdPerson[]>([]);
   const [peopleBusy, setPeopleBusy] = useState(false);
   const [peopleError, setPeopleError] = useState("");
@@ -124,11 +127,20 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
 
 
   useEffect(() => {
-    setPinEnabled(localStorage.getItem(pinKey) === "enabled");
     let mounted = true;
-    void hasDevicePin().then((exists) => { if (mounted) setPinExists(exists); }).catch((cause) => { if (mounted) setPinMessage(cause instanceof Error ? cause.message : String(cause)); });
+    void (async () => {
+      setPinExists(null);
+      setPinLoadError("");
+      try {
+        const enabled = localStorage.getItem(pinKey) === "enabled";
+        const exists = await hasDevicePin();
+        if (mounted) { setPinExists(exists); setPinEnabled(exists && enabled); }
+      } catch (cause) {
+        if (mounted) setPinLoadError(pinError(cause, language));
+      }
+    })();
     return () => { mounted = false; };
-  }, [pinKey]);
+  }, [pinKey, pinRevision, language]);
 
   useEffect(() => {
     const clear = () => onMediaPickerEnd();
@@ -166,30 +178,36 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
 
   const savePin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (pinBusy || pinExists === null) return;
+    if (!/^[0-9]{6}$/.test(newPin)) { setPinMessage(en ? "PIN must contain six digits." : "PIN ต้องเป็นตัวเลข 6 หลัก"); return; }
     if (newPin !== confirmPin) { setPinMessage(en ? "PINs do not match." : "รหัส 6 หลักทั้งสองช่องไม่ตรงกัน"); return; }
     setPinBusy(true); setPinMessage("");
     try {
+      if (!cloud) throw new Error(en ? "Please sign in to set a PIN." : "กรุณาเข้าสู่ระบบก่อนตั้ง PIN");
       if (!pinExists) {
-        const { data: userData, error: userError } = await cloud!.auth.getUser();
+        const { data: userData, error: userError } = await cloud.auth.getUser();
         if (userError || !userData.user?.email) throw userError ?? new Error(en ? "Account email is unavailable." : "ไม่พบอีเมลของบัญชี");
-        const { error: signInError } = await cloud!.auth.signInWithPassword({ email: userData.user.email, password: accountPassword });
+        const { error: signInError } = await cloud.auth.signInWithPassword({ email: userData.user.email, password: accountPassword });
         if (signInError) throw new Error(en ? "Enter your account password to set a PIN." : "กรุณาใส่รหัสผ่านบัญชีให้ถูกต้องก่อนตั้ง PIN");
       }
       const changed = await setDevicePin(newPin, pinExists ? currentPin : undefined);
       if (!changed) throw new Error(en ? "This PIN cannot be used. Check your old PIN or choose another code." : "ใช้รหัสนี้ไม่ได้ ตรวจรหัสเดิมหรือเลือกรหัสใหม่ที่ไม่ซ้ำกับบัญชีอื่น");
-      if (!pinExists) { localStorage.setItem(pinKey, "enabled"); setPinEnabled(true); }
       setPinExists(true);
+      if (!pinExists) { localStorage.setItem(pinKey, "enabled"); setPinEnabled(true); }
       setCurrentPin(""); setNewPin(""); setConfirmPin(""); setAccountPassword("");
       setPinMessage(en ? "PIN saved." : "บันทึก PIN แล้ว");
-    } catch (cause) { setPinMessage(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { setPinMessage(pinError(cause, language)); }
     finally { setPinBusy(false); }
   };
 
   const togglePin = async () => {
+    if (pinBusy || pinExists === null) return;
     if (pinEnabled) {
-      localStorage.removeItem(pinKey);
-      setPinEnabled(false);
-      setPinMessage(en ? "PIN at app opening is off on this device." : "ปิดการถาม PIN ตอนเปิดแอปบนเครื่องนี้แล้ว");
+      try {
+        localStorage.removeItem(pinKey);
+        setPinEnabled(false);
+        setPinMessage(en ? "PIN at app opening is off on this device." : "ปิดการถาม PIN ตอนเปิดแอปบนเครื่องนี้แล้ว");
+      } catch (cause) { setPinMessage(pinError(cause, language)); }
       return;
     }
     if (!pinExists) { setPinMessage(en ? "Set a PIN below first." : "ตั้ง PIN ด้านล่างก่อน"); return; }
@@ -200,7 +218,7 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
       localStorage.setItem(pinKey, "enabled");
       setPinEnabled(true);
       setPinMessage(en ? "PIN at app opening is on." : "เปิดการถาม PIN ตอนเปิดแอปแล้ว");
-    } catch (cause) { setPinMessage(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { setPinMessage(pinError(cause, language)); }
     finally { setCurrentPin(""); setPinBusy(false); }
   };
 
@@ -249,7 +267,7 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
       {canInvite && <section className="settings-card"><h2>{en ? "Invite family" : "เชิญเข้าร่วมบ้าน"}</h2><p>{en ? "The single-use code expires in 7 days." : "รหัสใช้ได้ครั้งเดียวและหมดอายุใน 7 วัน"}</p><button type="button" className="primary-button" disabled={busy} onClick={onInvite}>{en ? "Create invite code" : "สร้างรหัสเชิญ"}</button>{inviteCode && <div className="household-invite-code"><code>{inviteCode}</code><button type="button" onClick={() => void navigator.clipboard.writeText(inviteCode).then(() => setCopied(true))}>{copied ? (en ? "Copied" : "คัดลอกแล้ว") : (en ? "Copy" : "คัดลอก")}</button></div>}</section>}
       <section className="settings-card"><h2>{en ? "Join a home" : "เข้าร่วมบ้าน"}</h2><p>{en ? "Enter an invite code shared by the home owner." : "กรอกรหัสเชิญที่เจ้าของบ้านส่งให้"}</p><form className="household-join-form" onSubmit={(event) => { event.preventDefault(); onJoin(code); }}><input required value={code} onChange={(event) => setCode(event.target.value)} placeholder={en ? "Invite code" : "รหัสเชิญ"} autoCapitalize="none" autoComplete="off"/><button type="submit" className="primary-button" disabled={busy || !code.trim()}>{busy ? (en ? "Please wait..." : "กรุณารอสักครู่...") : (en ? "Join" : "เข้าร่วม")}</button></form></section>
     </div>}
-    {section === "pin" && <div className="settings-sections"><section className="settings-card"><h2>{en ? "Ask for PIN when opening the app" : "ถาม PIN เมื่อเปิดแอป"}</h2><p>{en ? "This applies to this signed-in device. Email sign-in remains available." : "ใช้กับเครื่องนี้ที่เข้าสู่ระบบแล้ว ยังเข้าใช้ด้วยอีเมลได้ตามปกติ"}</p><div className="settings-toggle-row"><span>{pinEnabled ? (en ? "On" : "เปิดอยู่") : (en ? "Off" : "ปิดอยู่")}</span><button type="button" className={`settings-switch ${pinEnabled ? "on" : ""}`} role="switch" aria-checked={pinEnabled} aria-label={en ? "Ask for PIN when opening the app" : "ถาม PIN เมื่อเปิดแอป"} disabled={pinBusy || pinExists === null} onClick={() => void togglePin()}><i/></button></div>{pinExists && !pinEnabled && <PasswordInput language={language} className="settings-pin-input" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="off" placeholder={en ? "Current PIN to turn on" : "PIN เดิมเพื่อเปิดใช้งาน"} value={currentPin} onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/>}</section><section className="settings-card"><h2>{pinExists ? (en ? "Change six-digit PIN" : "เปลี่ยน PIN 6 หลัก") : (en ? "Set six-digit PIN" : "ตั้ง PIN 6 หลัก")}</h2><p>{en ? "Choose a code that has not been used by another account." : "เลือกรหัสที่ไม่ซ้ำกับบัญชีอื่น"}</p>{pinExists === null ? <p>{en ? "Loading..." : "กำลังโหลด..."}</p> : <form className="household-password-form" onSubmit={(event) => void savePin(event)}>{!pinExists && <PasswordInput language={language} minLength={8} required autoComplete="current-password" placeholder={en ? "Account password" : "รหัสผ่านบัญชี"} value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)}/>} {pinExists && <PasswordInput language={language} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "Current PIN" : "PIN เดิม"} value={currentPin} onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/>}<PasswordInput language={language} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "New six-digit PIN" : "PIN ใหม่ 6 หลัก"} value={newPin} onChange={(event) => setNewPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/><PasswordInput language={language} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "Confirm new PIN" : "ยืนยัน PIN ใหม่"} value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/><button type="submit" className="primary-button" disabled={pinBusy}>{pinExists ? (en ? "Change PIN" : "เปลี่ยน PIN") : (en ? "Set PIN" : "ตั้ง PIN")}</button></form>}{pinMessage && <p role="status">{pinMessage}</p>}</section></div>}
+    {section === "pin" && <div className="settings-sections"><section className="settings-card"><h2>{en ? "Ask for PIN when opening the app" : "ถาม PIN เมื่อเปิดแอป"}</h2><p>{en ? "This applies to this signed-in device. Email sign-in remains available." : "ใช้กับเครื่องนี้ที่เข้าสู่ระบบแล้ว ยังเข้าใช้ด้วยอีเมลได้ตามปกติ"}</p><div className="settings-toggle-row"><span>{pinEnabled ? (en ? "On" : "เปิดอยู่") : (en ? "Off" : "ปิดอยู่")}</span><button type="button" className={`settings-switch ${pinEnabled ? "on" : ""}`} role="switch" aria-checked={pinEnabled} aria-label={en ? "Ask for PIN when opening the app" : "ถาม PIN เมื่อเปิดแอป"} disabled={pinBusy || pinExists === null} onClick={() => void togglePin()}><i/></button></div>{pinExists && !pinEnabled && <PasswordInput language={language} className="settings-pin-input" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="off" placeholder={en ? "Current PIN to turn on" : "PIN เดิมเพื่อเปิดใช้งาน"} value={currentPin} onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/>}</section><section className="settings-card"><h2>{pinExists ? (en ? "Change six-digit PIN" : "เปลี่ยน PIN 6 หลัก") : (en ? "Set six-digit PIN" : "ตั้ง PIN 6 หลัก")}</h2><p>{en ? "Choose a code that has not been used by another account." : "เลือกรหัสที่ไม่ซ้ำกับบัญชีอื่น"}</p>{pinExists === null ? (pinLoadError ? <div><p role="alert">{pinLoadError}</p><button type="button" className="secondary-button" onClick={() => setPinRevision((value) => value + 1)}>{en ? "Try again" : "ลองอีกครั้ง"}</button></div> : <p role="status">{en ? "Loading..." : "กำลังโหลด..."}</p>) : <form className="household-password-form" onSubmit={(event) => void savePin(event)}>{!pinExists && <PasswordInput language={language} minLength={8} required autoComplete="current-password" placeholder={en ? "Account password" : "รหัสผ่านบัญชี"} value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)}/>} {pinExists && <PasswordInput language={language} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "Current PIN" : "PIN เดิม"} value={currentPin} onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/>}<PasswordInput language={language} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "New six-digit PIN" : "PIN ใหม่ 6 หลัก"} value={newPin} onChange={(event) => setNewPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/><PasswordInput language={language} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "Confirm new PIN" : "ยืนยัน PIN ใหม่"} value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/><button type="submit" className="primary-button" disabled={pinBusy}>{pinExists ? (en ? "Change PIN" : "เปลี่ยน PIN") : (en ? "Set PIN" : "ตั้ง PIN")}</button></form>}{pinMessage && <p role="status">{pinMessage}</p>}</section></div>}
     {section === "display" && <div className="settings-sections"><section className="settings-card">{displaySettings}</section></div>}
     {section === "usage" && isAdmin && <UsagePage language={language}/>}
     {pendingMemberAction && typeof document !== "undefined" && createPortal(<div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPendingMemberAction(null); }}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="member-action-title"><h2 id="member-action-title">{pendingMemberAction.role === "remove" ? (en ? "Remove this member?" : "นำสมาชิกออกจากบ้าน?") : (en ? "Change member role?" : "เปลี่ยนบทบาทสมาชิก?")}</h2><p><strong>{pendingMemberAction.person.display_name || pendingMemberAction.person.email}</strong> · {pendingMemberAction.role === "remove" ? (en ? "They will no longer see this home's data." : "สมาชิกจะเข้าถึงข้อมูลบ้านนี้ไม่ได้อีก") : pendingMemberAction.role === "admin" ? (en ? "Grant home administration access" : "ให้สิทธิ์ผู้ดูแลบ้าน") : (en ? "Set as a regular member" : "เปลี่ยนเป็นสมาชิกทั่วไป")}</p><div className="confirm-actions"><button type="button" className="secondary-button" onClick={() => setPendingMemberAction(null)}>{en ? "Cancel" : "ยกเลิก"}</button><button type="button" className={pendingMemberAction.role === "remove" ? "danger-button" : "primary-button"} disabled={peopleBusy} onClick={() => void confirmMemberAction()}>{en ? "Confirm" : "ยืนยัน"}</button></div></section></div>, document.body)}

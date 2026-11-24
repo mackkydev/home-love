@@ -1452,6 +1452,8 @@ body{font-size:17px}
 .person-filter-tabs button span { flex: none; font-size: 11px; opacity: .75; }
 .person-filter-tabs button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
+.account-startup { min-height: 100dvh; background: var(--canvas); }
+
 /* Member administration uses the same cards, controls and back navigation as settings. */
 .admin-console { min-width: 0; background: var(--canvas); }
 .admin-console-header { justify-content: flex-start; flex: none; background: var(--surface); }
@@ -1489,14 +1491,18 @@ body{font-size:17px}
   html[data-theme="dark"] .app-shell, html[data-theme="dark"] .main-column {
     background: var(--mobile-chrome);
   }
-  html .topbar, html[data-theme="dark"] .topbar, html body::before { background: var(--mobile-chrome); }
+  html .topbar, html[data-theme="dark"] .topbar, html body::before, .account-startup { background: var(--mobile-chrome); }
   html .content-area, html[data-theme="dark"] .content-area {
     --page-glow-height: 275px;
-    background-color: var(--mobile-chrome);
+    background-color: var(--canvas);
     background-image: linear-gradient(180deg, var(--mobile-chrome) 0px, color-mix(in srgb, var(--mobile-chrome) 74%, var(--canvas)) calc(var(--page-glow-height) * .34), color-mix(in srgb, var(--mobile-chrome) 25%, var(--canvas)) calc(var(--page-glow-height) * .73), var(--canvas) var(--page-glow-height));
-    background-attachment: local;
+    /* Keep the foreground gradient stationary while its contents scroll. */
+    background-attachment: scroll;
     background-repeat: no-repeat;
+    overscroll-behavior-y: none;
+    -webkit-overflow-scrolling: auto;
   }
+  html .is-list-view .list-page { overscroll-behavior-y: none; -webkit-overflow-scrolling: auto; }
   html .is-list-view .content-area { --page-glow-height: 175px; }
   .content-area::before { display: none; }
   /* Paint the scroll container itself so its exposed top edge has the theme color. */

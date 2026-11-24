@@ -1,5 +1,6 @@
 "use client";
 import PasswordInput from "./PasswordInput";
+import { pinError } from "@/lib/pin-errors";
 
 import { useState, type FormEvent } from "react";
 import { cloud, verifyDevicePin } from "@/lib/cloud";
@@ -19,7 +20,7 @@ export default function PinLock({ language, onUnlock }: { language: "th" | "en";
       if (await verifyDevicePin(pin)) onUnlock();
       else setError(en ? "Incorrect PIN or temporarily locked. Try again later." : "รหัสไม่ถูกต้อง หรือถูกพักการลองชั่วคราว กรุณาลองใหม่ภายหลัง");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : (en ? "Could not unlock." : "ปลดล็อกไม่สำเร็จ"));
+      setError(pinError(cause, language));
     } finally {
       setPin("");
       setBusy(false);
