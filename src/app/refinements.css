@@ -1,0 +1,209 @@
+@font-face {
+  font-family: 'Noto Sans Thai';
+  font-style: normal;
+  font-weight: 400;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(/fonts/noto-sans-thai-thai.woff2) format('woff2');
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: 'Noto Sans Thai';
+  font-style: normal;
+  font-weight: 400;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(/fonts/noto-sans-thai-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Noto Sans Thai';
+  font-style: normal;
+  font-weight: 400;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(/fonts/noto-sans-thai-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Noto Sans Thai';
+  font-style: normal;
+  font-weight: 500;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(/fonts/noto-sans-thai-thai.woff2) format('woff2');
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: 'Noto Sans Thai';
+  font-style: normal;
+  font-weight: 500;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(/fonts/noto-sans-thai-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Noto Sans Thai';
+  font-style: normal;
+  font-weight: 500;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(/fonts/noto-sans-thai-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Noto Sans Thai';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(/fonts/noto-sans-thai-thai.woff2) format('woff2');
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: 'Noto Sans Thai';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(/fonts/noto-sans-thai-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Noto Sans Thai';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(/fonts/noto-sans-thai-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Noto Sans Thai';
+  font-style: normal;
+  font-weight: 700;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(/fonts/noto-sans-thai-thai.woff2) format('woff2');
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: 'Noto Sans Thai';
+  font-style: normal;
+  font-weight: 700;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(/fonts/noto-sans-thai-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Noto Sans Thai';
+  font-style: normal;
+  font-weight: 700;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(/fonts/noto-sans-thai-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Noto Sans Thai';
+  font-style: normal;
+  font-weight: 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(/fonts/noto-sans-thai-thai.woff2) format('woff2');
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+@font-face {
+  font-family: 'Noto Sans Thai';
+  font-style: normal;
+  font-weight: 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(/fonts/noto-sans-thai-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Noto Sans Thai';
+  font-style: normal;
+  font-weight: 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url(/fonts/noto-sans-thai-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+:root { --font-noto-thai: "Noto Sans Thai"; }
+
+/* Compact type, consistent actions, and clear stock metadata. */
+.feature-page .feature-heading h1 { font-size: 21px; line-height: 1.4; font-weight: 650; }
+.feature-page .feature-heading p { font-size: 12px; line-height: 1.6; font-weight: 400; }
+.feature-page .feature-card :is(h2,h3) { font-size: 16px; line-height: 1.5; }
+.feature-page .feature-card p { font-size: 13px; line-height: 1.6; }
+:is(.feature-page,.feature-dialog,.confirm-dialog,.confirmation-popup,.purchase-edit-dialog) :is(.primary-button,.secondary-button,.danger-button,.feature-file-button) {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-size: 13px; line-height: 1.45;
+}
+:is(.feature-page,.feature-dialog,.confirm-dialog,.confirmation-popup,.purchase-edit-dialog) button svg { flex: none; }
+.vault-page .feature-heading p { max-width: 43ch; font-size: 11px; opacity: .85; }
+.entry-title-line > strong { font-size: 14px; line-height: 1.5; font-weight: 650; }
+.entry-row :is(.medicine-summary,.entry-for-person,.stock-summary) { font-size: 12px; line-height: 1.65; }
+.entry-row .stock-summary { display: block; margin-top: 6px; }
+.stock-summary :is(.stock-quantity-line,.stock-runout-line) { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px; margin: 3px 0 0; font-size: inherit; color: inherit; }
+.stock-summary :is(.stock-quantity-line,.stock-runout-line) > svg { align-self: flex-start; margin-top: 3px; flex: none; }
+.stock-runout-line > span { flex: 1; min-width: 0; }
+.stock-runout-line small { font-size: inherit; }
+.stock-auto-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in srgb,var(--blue) 18%,var(--line)); border-radius: 6px; padding: 0 5px; background: color-mix(in srgb,var(--blue) 6%,var(--surface)); color: var(--muted); font-size: 10px; line-height: 1.7; white-space: nowrap; }
+.record-form-section .packaging-equation { display: grid; grid-template-columns: minmax(0,1fr); gap: 0; }
+.packaging-pair { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; align-items: end; }
+.packaging-pair > .form-label { min-width: 0; font-size: 12px; }
+.packaging-pair :is(input,.category-select-trigger) { min-width: 0; width: 100%; }
+.packaging-pair .category-select { min-width: 0; }
+.purchase-history-price { display: flex; align-items: center; gap: 10px; }
+.purchase-history-price .row-icon-button { flex: none; }
+.purchase-edit-date { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+.purchase-edit-hint { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.form-field-error { display: block; color: #d34361; font-size: 12px; line-height: 1.6; margin-top: 6px; }
+
+/* Native modal dialogs supply focus containment, Escape, and focus restoration. */
+:is(.confirm-dialog,.confirmation-popup,.purchase-edit-dialog) { padding: 0; margin: auto; width: min(420px,calc(100% - 32px)); max-height: calc(100dvh - 40px); overflow: auto; border: 1px solid var(--line); border-radius: 24px; background: var(--surface); color: var(--ink); box-shadow: 0 24px 90px #101a4055; }
+:is(.confirm-dialog,.confirmation-popup,.purchase-edit-dialog)::backdrop { background: #111b425c; backdrop-filter: blur(6px); }
+.confirm-dialog-card,.purchase-edit-form { padding: 26px 24px 22px; }
+.confirm-dialog-card { text-align: center; }
+.confirm-dialog-card h2 { margin: 14px 0 8px; font-size: 18px; line-height: 1.45; }
+.confirm-dialog-description { color: var(--muted); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.confirm-dialog-description strong { color: var(--ink); }
+.confirm-dialog-description p { margin: 8px 0 0; }
+.confirm-dialog-card .modal-actions { margin-top: 24px; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.confirmation-popup .confirm-modal { width: 100%; max-width: none; border: 0; box-shadow: none; border-radius: inherit; background: var(--surface); color: var(--ink); }
+.confirmation-popup .confirm-modal p { color: var(--muted); }
+.confirmation-popup .confirm-actions { flex-wrap: wrap; gap: 8px; }
+.purchase-edit-form .modal-top h2 { font-size: 19px; }
+.purchase-edit-form .modal-kicker { display: block; max-width: 29ch; overflow-wrap: anywhere; }
+.purchase-edit-form .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+:is(.confirm-dialog,.confirmation-popup,.purchase-edit-dialog) :focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+
+.startup-splash { position: fixed; inset: 0; z-index: 9000; min-height: 100dvh; overflow: hidden; background: #2c8fcd url('/startup-bg.jpg') center center/cover no-repeat; color: #fff; }
+.startup-splash-copy { position: absolute; top: 51%; left: 24px; right: 24px; max-width: 440px; margin: 0 auto; text-align: center; text-shadow: 0 1px 12px #144d8d44; }
+.startup-splash-eyebrow { display: block; font-size: 11px; letter-spacing: .2em; font-weight: 600; opacity: .8; margin-bottom: 9px; }
+.startup-splash h1 { font-size: clamp(19px,5vw,25px); line-height: 1.5; font-weight: 650; margin: 0; }
+.startup-splash p { margin: 8px 0 0; font-size: 13px; line-height: 1.7; color: #ffffffe6; }
+.startup-splash small { display: block; font-size: 11px; margin-top: 11px; color: #ffffffdc; }
+.startup-progress { display: block; height: 5px; max-width: 270px; margin: 28px auto 0; border-radius: 10px; overflow: hidden; background: #ffffff4f; }
+.startup-progress i { display: block; width: 40%; height: 100%; border-radius: inherit; background: #fff; animation: startup-progress 1.4s ease-in-out infinite alternate; }
+@keyframes startup-progress { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@media (min-width: 761px) { .startup-splash { background-size: auto 100%; background-color: #2e79ba; } }
+@media (max-width: 760px) {
+  .content-area .calendar-toolbar h2 { color: #fff; font-size: 17px; font-weight: 600; line-height: 1.5; }
+  .content-area .calendar-toolbar p { color: #ffffffdb; font-size: 12px; line-height: 1.65; max-width: 29ch; }
+  .calendar-toolbar { gap: 12px; align-items: flex-start; }
+  .calendar-toolbar > div { min-width: 0; flex: 1; }
+  .calendar-toolbar .primary-button { flex: none; max-width: 116px; font-size: 12px; padding: 10px 12px; }
+  .feature-page .feature-heading h1 { font-size: 19px; }
+  .feature-page .feature-heading p { font-size: 11px; }
+  .feature-page .feature-card :is(h2,h3) { font-size: 15px; }
+  .feature-page .feature-actions { gap: 7px; }
+  .feature-page :is(.primary-button,.secondary-button) { min-height: 38px; padding: 9px 11px; }
+  .purchase-history h2 { font-size: 16px; }
+  .purchase-edit-form { padding: 22px 18px; }
+}
+@media (prefers-reduced-motion: reduce) { .startup-progress i { animation: none; width: 65%; } }

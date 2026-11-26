@@ -1,14 +1,7 @@
 import type { Metadata, Viewport } from "next";
-import { Noto_Sans_Thai } from "next/font/google";
 import "./globals.css";
+import "./refinements.css";
 import AccountAccessGate from "./AccountAccessGate";
-
-const notoThai = Noto_Sans_Thai({
-  variable: "--font-noto-thai",
-  subsets: ["thai", "latin"],
-  weight: ["400", "500", "600", "700", "800"],
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "บ้านของเรา | จัดการเรื่องในบ้าน",
@@ -17,13 +10,14 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "บ้านของเรา" },
   formatDetection: { telephone: false },
   manifest: "/manifest.webmanifest",
+  icons: { icon: [{ url: "/icon-192.png?v=20261126", sizes: "192x192", type: "image/png" }, { url: "/icon-512.png?v=20261126", sizes: "512x512", type: "image/png" }], apple: "/apple-icon.png?v=20261126" },
 };
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#3565f6" };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="th" className={notoThai.variable} suppressHydrationWarning>
+    <html lang="th" suppressHydrationWarning>
       <head><script dangerouslySetInnerHTML={{ __html: `try {
         const root = document.documentElement;
         const savedTheme = localStorage.getItem('baanjai-theme');

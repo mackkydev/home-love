@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore }
 import { createVault, maxVaultFileBytes, maxVaultLogoBytes, readVaultFile, sealVault, unlockVault, type VaultRecord } from "@/lib/password-vault";
 import { externalWebUrl } from "@/lib/web-url";
 import Icon from "./Icon";
+import ConfirmDialog from "./ConfirmDialog";
 import { passwordClipboard, type ClipboardState } from "@/lib/password-clipboard";
 import PhotoCropField from "./PhotoCropField";
 
@@ -249,7 +250,7 @@ export default function PasswordVault({ scope, language }: { scope: string; lang
   return <section className="feature-page vault-page">
     <header className="feature-heading">
       <div><h1>{title}</h1><p>{ui("เข้ารหัสและเก็บในเบราว์เซอร์นี้ · สำรองเป็นไฟล์เข้ารหัสได้", "Encrypted in this browser · Export an encrypted backup")}</p></div>
-      {session && <button type="button" className="secondary-button" onClick={lock}>{ui("ล็อกคลัง", "Lock vault")}</button>}
+      {session && <button type="button" className="secondary-button" onClick={lock}><Icon name="lock" size={16}/>{ui("ล็อกคลัง", "Lock vault")}</button>}
     </header>
     {error && <p className="feature-error" role="alert">{error}</p>}
     {clipboardState.status !== "idle" && <div className="vault-clipboard-status" role="status">
@@ -258,7 +259,7 @@ export default function PasswordVault({ scope, language }: { scope: string; lang
         : clipboardState.status === "changed" ? ui("คลิปบอร์ดเปลี่ยนเป็นข้อมูลอื่นแล้ว", "Clipboard contains something else now")
         : clipboardState.status === "error" ? ui("คัดลอกไม่สำเร็จ กรุณาอนุญาตคลิปบอร์ดหรือเปิดผ่าน HTTPS", "Copy failed. Allow clipboard access and use HTTPS.")
         : ui("ครบ 1 นาทีแล้ว แต่เบราว์เซอร์ไม่อนุญาตให้ล้างอัตโนมัติ กรุณากดล้างคลิปบอร์ด", "One minute elapsed, but automatic clearing was blocked. Clear the clipboard manually.")}</span>
-      {(clipboardState.status === "copied" || clipboardState.status === "blocked") && <button type="button" className="secondary-button" onClick={() => void passwordClipboard().clear()}>{ui("ล้างคลิปบอร์ด", "Clear clipboard")}</button>}
+      {(clipboardState.status === "copied" || clipboardState.status === "blocked") && <button type="button" className="secondary-button" onClick={() => void passwordClipboard().clear()}><Icon name="trash" size={16}/>{ui("ล้างคลิปบอร์ด", "Clear clipboard")}</button>}
     </div>}
     {saved === undefined ? <p role="status">{ui("กำลังเปิดคลัง…", "Loading vault…")}</p> : !available ? <p role="alert">{ui("ต้องเปิดผ่าน HTTPS และอนุญาตให้เบราว์เซอร์จัดเก็บข้อมูล", "Use HTTPS and allow browser storage to open the vault.")}</p> : !session ? <section className="feature-card vault-lock-card">
       <h2>{backup ? ui("กู้คืนจากไฟล์เข้ารหัส", "Restore an encrypted file") : creating ? ui("ตั้งรหัสหลัก", "Set a master passphrase") : ui("ปลดล็อกคลัง", "Unlock the vault")}</h2>
@@ -269,17 +270,17 @@ export default function PasswordVault({ scope, language }: { scope: string; lang
           autoComplete={creating ? "new-password" : "off"} showCount={creating} language={language}/>
         {creating && <PasswordField label={ui("ยืนยันรหัสหลัก", "Confirm master passphrase")} value={confirmation} onChange={setConfirmation}
           maxLength={1024} autoComplete="new-password" showCount language={language}/>}
-        <button type="submit" className="primary-button" disabled={busy}>{busy ? ui("กำลังดำเนินการ…", "Working…") : backup && saved ? ui("ปลดล็อกและแทนที่คลัง", "Unlock and replace vault") : creating ? ui("สร้างคลังรหัสผ่าน", "Create vault") : ui("ปลดล็อก", "Unlock")}</button>
+        <button type="submit" className="primary-button" disabled={busy}><Icon name="lock" size={16}/>{busy ? ui("กำลังดำเนินการ…", "Working…") : backup && saved ? ui("ปลดล็อกและแทนที่คลัง", "Unlock and replace vault") : creating ? ui("สร้างคลังรหัสผ่าน", "Create vault") : ui("ปลดล็อก", "Unlock")}</button>
       </form>
       <div className="feature-actions vault-file-actions">
-        {saved && <button type="button" className="secondary-button" onClick={download}>{ui("ดาวน์โหลดไฟล์สำรอง", "Download backup")}</button>}
-        {backup ? <button type="button" className="secondary-button" disabled={busy} onClick={() => { setBackup(""); setPassphrase(""); setError(""); }}>{ui("ยกเลิกการกู้คืน", "Cancel restore")}</button>
-          : <label className="secondary-button feature-file-button">{ui("เลือกไฟล์สำรอง", "Choose backup file")}<input type="file" accept=".json,application/json" disabled={busy} onChange={(event) => void loadBackup(event)}/></label>}
+        {saved && <button type="button" className="secondary-button" onClick={download}><Icon name="download" size={16}/>{ui("ดาวน์โหลดไฟล์สำรอง", "Download backup")}</button>}
+        {backup ? <button type="button" className="secondary-button" disabled={busy} onClick={() => { setBackup(""); setPassphrase(""); setError(""); }}><Icon name="close" size={16}/>{ui("ยกเลิกการกู้คืน", "Cancel restore")}</button>
+          : <label className="secondary-button feature-file-button"><Icon name="file" size={16}/>{ui("เลือกไฟล์สำรอง", "Choose backup file")}<input type="file" accept=".json,application/json" disabled={busy} onChange={(event) => void loadBackup(event)}/></label>}
       </div>
     </section> : <>
       <div className="feature-actions">
-        <button type="button" className="primary-button" disabled={busy} onClick={() => { setDraft(emptyRecord); setRevealed(null); setRemoveId(null); setError(""); }}>{ui("＋ เพิ่มรหัสผ่าน", "＋ Add login")}</button>
-        <button type="button" className="secondary-button" onClick={download}>{ui("ดาวน์โหลดไฟล์สำรอง", "Download backup")}</button>
+        <button type="button" className="primary-button" disabled={busy} onClick={() => { setDraft(emptyRecord); setRevealed(null); setRemoveId(null); setError(""); }}><Icon name="plus" size={16}/>{ui("เพิ่มรหัสผ่าน", "Add login")}</button>
+        <button type="button" className="secondary-button" onClick={download}><Icon name="download" size={16}/>{ui("ดาวน์โหลดไฟล์สำรอง", "Download backup")}</button>
       </div>
       {draft && <form className="feature-card vault-lock-card" onSubmit={saveRecord} autoComplete="off">
         <h2>{draft.id ? ui("แก้ไขรหัสผ่าน", "Edit login") : ui("เพิ่มรหัสผ่าน", "Add login")}</h2>
@@ -290,7 +291,7 @@ export default function PasswordVault({ scope, language }: { scope: string; lang
         <label className="form-label">{ui("ลิงก์หรือข้อความ (ไม่บังคับ)", "Link or text (optional)")}<input maxLength={2048} value={draft.link} onChange={(event) => setDraft({ ...draft, link: event.target.value })}/></label>
         <PhotoCropField value={draft.logo} onChange={(logo) => setDraft((current) => current ? { ...current, logo } : current)}
           label={ui("อัปโหลดโลโก้", "Upload logo")} language={language} aspect={1} maxWidth={128} maxBytes={maxVaultLogoBytes}/>
-        <div className="feature-actions"><button type="submit" className="primary-button" disabled={busy}>{ui("บันทึกเข้าคลัง", "Save to vault")}</button><button type="button" className="secondary-button" disabled={busy} onClick={() => setDraft(null)}>{ui("ยกเลิก", "Cancel")}</button></div>
+        <div className="feature-actions"><button type="submit" className="primary-button" disabled={busy}><Icon name="check" size={16}/>{ui("บันทึกเข้าคลัง", "Save to vault")}</button><button type="button" className="secondary-button" disabled={busy} onClick={() => setDraft(null)}><Icon name="close" size={16}/>{ui("ยกเลิก", "Cancel")}</button></div>
       </form>}
       {!session.records.length && !draft && <p className="feature-card">{ui("ยังไม่มีรหัสผ่านในคลัง", "Your vault is empty.")}</p>}
       <ul className="vault-records">
@@ -305,12 +306,12 @@ export default function PasswordVault({ scope, language }: { scope: string; lang
               <div><h2>{item.name}</h2><p>{item.username}</p>{item.link && (href ? <a href={href} target="_blank" rel="noopener noreferrer">{item.link} ↗</a> : <p>{item.link}</p>)}</div>
             </div>
             <div className="feature-actions">
-              <button type="button" className="secondary-button" aria-pressed={revealed === item.id} onClick={() => setRevealed(revealed === item.id ? null : item.id)}>{revealed === item.id ? ui("ซ่อนรหัส", "Hide password") : ui("แสดงรหัส", "Show password")}</button>
-              <button type="button" className="secondary-button" disabled={busy} onClick={() => { setDraft(item); setRevealed(null); setRemoveId(null); }}>{ui("แก้ไข", "Edit")}</button>
-              <button type="button" className="secondary-button" disabled={busy} onClick={() => setRemoveId(item.id)}>{ui("ลบ", "Delete")}</button>
+              <button type="button" className="secondary-button" aria-pressed={revealed === item.id} onClick={() => setRevealed(revealed === item.id ? null : item.id)}><Icon name={revealed === item.id ? "eye-off" : "eye"} size={16}/>{revealed === item.id ? ui("ซ่อนรหัส", "Hide password") : ui("แสดงรหัส", "Show password")}</button>
+              <button type="button" className="secondary-button" disabled={busy} onClick={() => { setDraft(item); setRevealed(null); setRemoveId(null); }}><Icon name="edit" size={16}/>{ui("แก้ไข", "Edit")}</button>
+              <button type="button" className="secondary-button" disabled={busy} onClick={() => setRemoveId(item.id)}><Icon name="trash" size={16}/>{ui("ลบ", "Delete")}</button>
             </div>
             <div className="vault-password-copy-row"><code className="vault-revealed">{revealed === item.id ? item.password : "••••••••••••"}</code><button type="button" className="secondary-button" disabled={copyBusy} aria-label={ui("คัดลอกรหัสผ่าน ", "Copy password for ") + item.name} onClick={() => void copyPassword(item.password)}><Icon name="copy" size={17}/>{ui("คัดลอก", "Copy")}</button></div>
-            {removeId === item.id && <div className="feature-actions"><span>{ui("ลบรหัสผ่านรายการนี้?", "Delete this login?")}</span><button type="button" className="danger-button" disabled={busy} onClick={() => void update(session.records.filter((record) => record.id !== item.id))}>{ui("ยืนยันลบ", "Confirm deletion")}</button><button type="button" className="secondary-button" onClick={() => setRemoveId(null)}>{ui("ยกเลิก", "Cancel")}</button></div>}
+            {removeId === item.id && <ConfirmDialog title={ui("ลบรหัสผ่านรายการนี้?", "Delete this login?")} confirmLabel={ui("ยืนยันลบ", "Confirm deletion")} cancelLabel={ui("ยกเลิก", "Cancel")} busy={busy} onCancel={() => setRemoveId(null)} onConfirm={() => void update(session.records.filter((record) => record.id !== item.id))}><strong>{item.name}</strong><p>{ui("การลบนี้ไม่สามารถย้อนกลับได้", "This cannot be undone.")}</p></ConfirmDialog>}
           </li>;
         })}
       </ul>

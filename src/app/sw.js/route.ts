@@ -3,7 +3,7 @@ const buildVersion = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.VERCEL_DEP
 export function GET() {
   const script = `
 const CACHE_NAME = ${JSON.stringify(`our-home-shell-${buildVersion}`)};
-const APP_SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
+const APP_SHELL = ["/", "/manifest.webmanifest", "/icon-192.png?v=20261126", "/icon-512.png?v=20261126", "/startup-bg.jpg"];
 const IS_LOCAL_DEV = self.location.hostname === "localhost" || self.location.hostname === "127.0.0.1";
 
 self.addEventListener("install", (event) => {

@@ -4,6 +4,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { isInTrip, isTravelRecord, travelSelection, type CalendarInfo, type TravelInfo, type TravelRecord, type TravelSelection } from "@/lib/travel";
 import { externalWebUrl } from "@/lib/web-url";
 import PhotoCropField from "./PhotoCropField";
+import Icon from "./Icon";
+import ConfirmDialog from "./ConfirmDialog";
 
 type Language = "th" | "en";
 type SourceRecord = Omit<TravelRecord, "kind" | "calendar" | "travel"> & { kind: string; calendar?: CalendarInfo; travel?: TravelInfo; photos?: string[] };
@@ -128,8 +130,8 @@ function TravelEditor({ entry, trip, date, relatedDates, language, onSave, onCan
       label={trip ? ui("เลือกรูปสถานที่", "Choose place photo") : ui("เลือกรูปปก", "Choose cover photo")} maxBytes={1024 * 1024}
       hint={ui("ระบบย่อรูปให้ไม่เกิน 1 MB", "Photos are resized to 1 MB or less.")}/>
     <div className="feature-actions feature-dialog-actions">
-      <button type="submit" className="primary-button">{ui("บันทึก", "Save")}</button>
-      <button type="button" className="secondary-button" onClick={cancel}>{ui("ยกเลิก", "Cancel")}</button>
+      <button type="submit" className="primary-button"><Icon name="check" size={16}/>{ui("บันทึก", "Save")}</button>
+      <button type="button" className="secondary-button" onClick={cancel}><Icon name="close" size={16}/>{ui("ยกเลิก", "Cancel")}</button>
     </div>
     </form>
   </dialog>;
@@ -165,13 +167,10 @@ export default function TravelPage({ entries, language, today, selection, onSele
   return <section className="feature-page travel-page">
     <header className="feature-heading">
       <div><h1>{ui("วางแผนเดินทาง", "Travel planner")}</h1>{!trip && <p>{ui("จัดแผนรายวันและดูเวลาเดินทางในปฏิทินของบ้าน", "Plan each day and see your itinerary on the household calendar.")}</p>}</div>
-      {trip ? <button type="button" className="secondary-button" onClick={() => navigate(null)}>{ui("ดูทุกการเดินทาง", "All trips")}</button>
-        : <button type="button" className="primary-button" onClick={addTrip}>{ui("＋ สร้างแผนเดินทาง", "＋ Plan a trip")}</button>}
+      {trip ? <button type="button" className="secondary-button" onClick={() => navigate(null)}><Icon name="luggage" size={16}/>{ui("ดูทุกการเดินทาง", "All trips")}</button>
+        : <button type="button" className="primary-button" onClick={addTrip}><Icon name="plus" size={16}/>{ui("สร้างแผนเดินทาง", "Plan a trip")}</button>}
     </header>
-    {removing && <section className="feature-card feature-warning" role="alert">
-      <p>{removing.travel.kind === "trip" ? ui("ลบทริปพร้อมสถานที่และการแจ้งเตือนทั้งหมดในทริปนี้?", "Delete this trip and all of its stops and reminders?") : ui("ลบสถานที่นี้ออกจากแผนและปฏิทิน?", "Remove this stop from the trip and calendar?")}</p>
-      <div className="feature-actions"><button type="button" className="danger-button" onClick={() => { onRemove(removing); navigate(removing.travel.kind === "trip" ? null : { id: removing.travel.tripId, date }); }}>{ui("ยืนยันลบ", "Confirm deletion")}</button><button type="button" className="secondary-button" onClick={() => setRemoving(null)}>{ui("ยกเลิก", "Cancel")}</button></div>
-    </section>}
+    {removing && <ConfirmDialog title={ui("ยืนยันการลบ", "Confirm deletion")} confirmLabel={ui("ยืนยันลบ", "Delete")} cancelLabel={ui("ยกเลิก", "Cancel")} onCancel={() => setRemoving(null)} onConfirm={() => { onRemove(removing); navigate(removing.travel.kind === "trip" ? null : { id: removing.travel.tripId, date }); }}><strong>{removing.name}</strong><p>{removing.travel.kind === "trip" ? ui("ลบทริปพร้อมสถานที่และการแจ้งเตือนทั้งหมดในทริปนี้?", "Delete this trip and all of its stops and reminders?") : ui("ลบสถานที่นี้ออกจากแผนและปฏิทิน?", "Remove this stop from the trip and calendar?")}</p></ConfirmDialog>}
     {editor && (editor.kind === "trip" || trip) && <TravelEditor key={editor.entry?.id ?? editor.kind} entry={editor.entry} trip={editor.kind === "stop" ? trip : undefined} date={date}
       relatedDates={tripStops.map((stop) => stop.date)} language={language} onSave={save} onCancel={() => setEditor(null)}/>}
     {!trip ? trips.length ? <ul className="travel-trips">
@@ -188,10 +187,10 @@ export default function TravelPage({ entries, language, today, selection, onSele
           {(end !== trip.date || tripInfo?.endTime) && <> – {end !== trip.date && dateText(end, language)}{tripInfo?.endTime && " " + tripInfo.endTime}</>}</p>
           {tripInfo?.details && <p className="travel-overview-details">{tripInfo.details}</p>}
           <div className="feature-actions">
-            {tripMap && <a className="secondary-button" href={tripMap} target="_blank" rel="noopener noreferrer">{ui("เปิด Google Maps ↗", "Open Google Maps ↗")}</a>}
-            <button type="button" className="secondary-button" onClick={() => onCalendar(date)}>{ui("ดูในปฏิทิน", "View calendar")}</button>
-            <button type="button" className="secondary-button" onClick={() => setEditor({ kind: "trip", entry: trip })}>{ui("แก้ไขทริป", "Edit trip")}</button>
-            <button type="button" className="secondary-button" onClick={() => { setEditor(null); setRemoving(trip); }}>{ui("ลบทริป", "Delete trip")}</button>
+            {tripMap && <a className="secondary-button" href={tripMap} target="_blank" rel="noopener noreferrer"><Icon name="map" size={16}/>{ui("เปิด Google Maps ↗", "Open Google Maps ↗")}</a>}
+            <button type="button" className="secondary-button" onClick={() => onCalendar(date)}><Icon name="calendar" size={16}/>{ui("ดูในปฏิทิน", "View calendar")}</button>
+            <button type="button" className="secondary-button" onClick={() => setEditor({ kind: "trip", entry: trip })}><Icon name="edit" size={16}/>{ui("แก้ไขทริป", "Edit trip")}</button>
+            <button type="button" className="secondary-button" onClick={() => { setEditor(null); setRemoving(trip); }}><Icon name="trash" size={16}/>{ui("ลบทริป", "Delete trip")}</button>
           </div>
         </div>
       </article>
@@ -200,7 +199,7 @@ export default function TravelPage({ entries, language, today, selection, onSele
           <button type="button" className="secondary-button" aria-label={ui("วันก่อนหน้า", "Previous day")} disabled={date === trip.date} onClick={() => navigate({ id: trip.id, date: changeDay(date, -1) })}>‹</button>
           <label className="form-label">{ui("แผนวันที่", "Itinerary date")}<input type="date" min={trip.date} max={end} value={date} onInput={(event) => { const value = event.currentTarget.value; if (value >= trip.date && value <= end) navigate({ id: trip.id, date: value }); }}/></label>
           <button type="button" className="secondary-button" aria-label={ui("วันถัดไป", "Next day")} disabled={date === end} onClick={() => navigate({ id: trip.id, date: changeDay(date, 1) })}>›</button>
-          <button type="button" className="primary-button" onClick={() => { setRemoving(null); setEditor({ kind: "stop" }); }}>{ui("＋ เพิ่มสถานที่", "＋ Add stop")}</button>
+          <button type="button" className="primary-button" onClick={() => { setRemoving(null); setEditor({ kind: "stop" }); }}><Icon name="plus" size={16}/>{ui("เพิ่มสถานที่", "Add stop")}</button>
         </div>
         {dayStops.length ? <ol className="travel-stops">
           {dayStops.map((stop) => {
@@ -214,9 +213,9 @@ export default function TravelPage({ entries, language, today, selection, onSele
                 {stop.travel.details && <p>{stop.travel.details}</p>}
                 {stop.travel.contact && <p><strong>{ui("ติดต่อ", "Contact")}</strong> {stop.travel.contact}</p>}
                 <div className="feature-actions">
-                  {location && <a className="secondary-button" href={location} target="_blank" rel="noopener noreferrer">{ui("เปิดแผนที่ ↗", "Open map ↗")}</a>}
-                  <button type="button" className="secondary-button" onClick={() => { setRemoving(null); setEditor({ kind: "stop", entry: stop }); }}>{ui("แก้ไข", "Edit")}</button>
-                  <button type="button" className="secondary-button" onClick={() => { setEditor(null); setRemoving(stop); }}>{ui("ลบ", "Delete")}</button>
+                  {location && <a className="secondary-button" href={location} target="_blank" rel="noopener noreferrer"><Icon name="map" size={16}/>{ui("เปิดแผนที่ ↗", "Open map ↗")}</a>}
+                  <button type="button" className="secondary-button" onClick={() => { setRemoving(null); setEditor({ kind: "stop", entry: stop }); }}><Icon name="edit" size={16}/>{ui("แก้ไข", "Edit")}</button>
+                  <button type="button" className="secondary-button" onClick={() => { setEditor(null); setRemoving(stop); }}><Icon name="trash" size={16}/>{ui("ลบ", "Delete")}</button>
                 </div>
               </div>
             </li>;

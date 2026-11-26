@@ -1,4 +1,5 @@
 "use client";
+import StartupSplash from "./StartupSplash";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cloud, cloudEnabled, getMyAccess } from "@/lib/cloud";
 import { usageError } from "@/lib/usage-limits";
@@ -28,6 +29,6 @@ export default function AccountAccessGate({children}:{children:React.ReactNode})
   return()=>{disposed=true;clearTimeout(initial);data.subscription.unsubscribe();clearInterval(timer);document.removeEventListener("visibilitychange",visible);};
  },[check]);
  if(state==="ready")return children;
-  if(state==="checking")return <div className="account-startup" aria-busy="true"/>;
+  if(state==="checking")return <StartupSplash/>;
   return <section className="account-disabled" role="status"><h1>{state==="disabled"?"บัญชีถูกปิดการใช้งาน":"ตรวจสอบสิทธิ์ไม่สำเร็จ"}</h1>{message&&<p>{message}</p>}<div className="feature-actions"><button type="button" className="primary-button" onClick={()=>void check()}>ตรวจสอบอีกครั้ง</button><button type="button" className="secondary-button" onClick={()=>void cloud?.auth.signOut()}>ออกจากระบบ</button></div></section>;
 }
