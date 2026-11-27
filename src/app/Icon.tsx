@@ -1,6 +1,11 @@
 export default function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true as const };
   const paths: Record<string, React.ReactNode> = {
+    pill: <g transform="rotate(45 12 12)"><rect x="7" y="2" width="10" height="20" rx="5"/><path d="M7 12h10"/></g>,
+    display: <><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></>,
+    chart: <><path d="M4 3v18h17M8 16v-4m5 4V7m5 9v-6"/></>,
+    logout: <><path d="M10 4H4v16h6m-1-8h12m-4-4 4 4-4 4"/></>,
+    back: <path d="m15 18-6-6 6-6"/>,
     backspace: <><path d="M8 5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8l-6-7 6-7Z"/><path d="m12 9 6 6m0-6-6 6"/></>,
     eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="2.5"/></>,
     "eye-off": <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><path d="m3 3 18 18"/></>,

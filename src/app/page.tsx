@@ -4,6 +4,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import { cloud, cloudEnabled, createHouseholdInvite, createPortableBackup, getProfilePhotoUrl, isAppAdmin, joinHousehold, listHouseholdPeople, listHouseholds, openHousehold, renameHousehold, saveHousehold, type CloudSnapshot, type Household, type HouseholdPerson } from "@/lib/cloud";
 import CloudAuth from "./CloudAuth";
+import NotificationSettings from "./NotificationSettings";
+import { usePhoneNotifications } from "./usePhoneNotifications";
+import { bangkokDate } from "@/lib/notification-reminders";
 import SettingsPage from "./SettingsPage";
 import AdminPanel from "./AdminPanel";
 import PinLock from "./PinLock";
@@ -109,9 +112,8 @@ function safeLocationUrl(value?: string): string | null {
 
 function scheduledAlerts(entries: Entry[], nowMs: number, language: Language, userId: string): InAppAlert[] {
   if (!nowMs) return [];
-  const now = new Date(nowMs);
-  const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-  const dateAt = (offsetDays: number) => localDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays));
+  const midnight = Date.parse(`${bangkokDate(nowMs)}T00:00:00+07:00`);
+  const dateAt = (offsetDays: number) => bangkokDate(midnight + offsetDays * 86_400_000);
   const oldest = nowMs - 14 * 86_400_000;
   const result: InAppAlert[] = [];
   for (const entry of currentTravelEntries(entries)) {
@@ -120,7 +122,7 @@ function scheduledAlerts(entries: Entry[], nowMs: number, language: Language, us
       if (!/^\d{2}:\d{2}$/.test(reminder.time)) continue;
       for (let offset = -14; offset <= 0; offset += 1) {
         const date = dateAt(offset);
-        const occurredAt = new Date(`${date}T${reminder.time}:00`).getTime();
+        const occurredAt = new Date(`${date}T${reminder.time}:00+07:00`).getTime();
         if (occurredAt < oldest || occurredAt > nowMs) continue;
         result.push({ key: `${entry.id}:medicine:${reminder.meal}:${date}`, entryId: entry.id, kind: "medicine", title: language === "en" ? `Medicine: ${entry.name}` : `ถึงเวลากิน: ${entry.name}`, body: reminder.message || (language === "en" ? `${reminder.meal} reminder` : `เวลากินยา ${reminder.meal}`), occurredAt });
       }
@@ -130,7 +132,7 @@ function scheduledAlerts(entries: Entry[], nowMs: number, language: Language, us
     if (event.recipientIds && !event.recipientIds.includes(userId)) continue;
     const dates = event.type === "contract" ? [event.end || event.start] : calendarOccurrenceDates(event, dateAt(-14), dateAt(7));
     for (const date of dates) {
-      const occurredAt = new Date(`${date}T${event.time || "09:00"}:00`).getTime() - Math.max(0, event.remindMinutes || 0) * 60_000;
+      const occurredAt = new Date(`${date}T${event.time || "09:00"}:00+07:00`).getTime() - Math.max(0, event.remindMinutes || 0) * 60_000;
       if (!Number.isFinite(occurredAt) || occurredAt < oldest || occurredAt > nowMs) continue;
       result.push({ key: `${entry.id}:calendar:${date}:${event.time}`, entryId: entry.id, occurrenceDate: date, kind: event.type, title: entry.name, body: event.message || (entry.travel ? language === "en" ? "Travel reminder" : "แจ้งเตือนแผนเดินทาง" : event.type === "contract" ? language === "en" ? "Contract ending" : "สัญญากำลังสิ้นสุด" : language === "en" ? "Appointment reminder" : "แจ้งเตือนนัดหมาย"), occurredAt });
     }
@@ -148,7 +150,7 @@ const initialEntries: Entry[] = [
 
 const categories = [
   { name: "ทั้งหมด", icon: "grid", color: "blue" },
-  { name: "ยาและสุขภาพ", icon: "plus", color: "rose" },
+  { name: "ยาและสุขภาพ", icon: "pill", color: "rose" },
   { name: "ของใช้ในบ้าน", icon: "home", color: "amber" },
   { name: "การเงิน", icon: "wallet", color: "teal" },
   { name: "บริการ", icon: "spark", color: "violet" },
@@ -261,7 +263,6 @@ function hasMedicineInstructions(form: { medMeals: string[]; medFoodTiming: stri
 function medicineFromForm(form: { medMeals: string[]; medFoodTiming: string; medFrequencyHours: string; medDose: string; medDoseUnit: string; medDetails: string; medPurpose: string; medReminders: MedicineInstructions["reminders"] }): MedicineInstructions {
   return { meals: form.medMeals, foodTiming: form.medFoodTiming, frequencyHours: form.medFrequencyHours, dose: form.medDose, doseUnit: form.medDoseUnit, details: form.medDetails.trim(), purpose: form.medPurpose.trim() || undefined, reminders: form.medReminders };
 }
-function vapidBytes(value: string) { const base64 = value.replace(/-/g, "+").replace(/_/g, "/"); const raw = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")); return Uint8Array.from(raw, (char) => char.charCodeAt(0)); }
 async function documentAttachment(file: File): Promise<Attachment> {
   if (file.type.startsWith("image/")) return { name: file.name || "photo.jpg", data: await compressPhoto(file), type: "image/jpeg" };
   if (file.size > 1024 * 1024) throw new Error("ไฟล์ใหญ่เกิน 1 MB");
@@ -309,6 +310,7 @@ export default function Home() {
   const activeHouseholdRef = useRef("");
   const switchingHouseholdRef = useRef(false);
   const loadedUser = useRef("");
+  const [signedInUserId, setSignedInUserId] = useState("");
   const editorOpenRef = useRef(false);
   const cloudSavingRef = useRef(false);
   const remoteRefreshRunningRef = useRef(false);
@@ -363,14 +365,13 @@ export default function Home() {
   const [paletteMode, setPaletteMode] = useState<PaletteMode>("normal");
   const [customColor, setCustomColor] = useState("#3565f6");
   const [language, setLanguage] = useState<Language>("th");
-  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("default");
-  const [pushReady, setPushReady] = useState(false);
+  const phoneNotifications = usePhoneNotifications(signedInUserId, ready, language === "en", setNotice);
+  const { permission: notificationPermission, pushReady, enablePush } = phoneNotifications;
   const [installPlatform, setInstallPlatform] = useState<InstallPlatform>(null);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [appUpdateReady, setAppUpdateReady] = useState(false);
-  useEffect(() => { if (!ready || notificationPermission !== "granted" || !("serviceWorker" in navigator)) return; void navigator.serviceWorker.ready.then((registration) => registration.pushManager.getSubscription()).then((subscription) => setPushReady(Boolean(subscription))).catch(() => undefined); }, [ready, notificationPermission]);
 
   useEffect(() => {
     const standalone = window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
@@ -411,7 +412,7 @@ export default function Home() {
   }, []);
   useEffect(() => { const media = window.matchMedia("(prefers-color-scheme: dark)"); const updateSystemTheme = () => setSystemDark(media.matches); updateSystemTheme(); media.addEventListener("change", updateSystemTheme); return () => media.removeEventListener("change", updateSystemTheme); }, []);
   useEffect(() => { if (!ready) return; const root = document.documentElement; root.dataset.theme = theme === "system" ? (systemDark ? "dark" : "light") : theme; root.dataset.accent = accent; root.dataset.palette = paletteMode; root.lang = language === "th" ? "th" : "en"; if (accent === "custom") { root.style.setProperty("--blue", customColor); root.style.setProperty("--blue-dark", adjustHex(customColor, -35)); } else { root.style.removeProperty("--blue"); root.style.removeProperty("--blue-dark"); } document.querySelector('meta[name="theme-color"]')?.setAttribute("content", root.dataset.theme === "dark" ? "#151f35" : getComputedStyle(root).getPropertyValue("--blue").trim() || "#3565f6"); if (ready) { localStorage.setItem("baanjai-theme", theme); localStorage.setItem("baanjai-accent", accent); localStorage.setItem("baanjai-palette", paletteMode); localStorage.setItem("baanjai-custom-color", customColor); localStorage.setItem("baanjai-language", language); } }, [theme, systemDark, accent, paletteMode, customColor, language, ready]);
-  useEffect(() => { if ("Notification" in window) setNotificationPermission(Notification.permission); else setNotificationPermission("unsupported"); const timer = setInterval(() => { setTodayValue(today()); setHour(new Date().getHours()); }, 60_000); return () => clearInterval(timer); }, []);
+  useEffect(() => { const timer = setInterval(() => { setTodayValue(today()); setHour(new Date().getHours()); }, 60_000); return () => clearInterval(timer); }, []);
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       const container = filterChipsRef.current;
@@ -503,8 +504,8 @@ export default function Home() {
       setUserDisplayName(session ? String(session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split("@")[0] || "").trim() : "");
       setUserEmail(session?.user.email ?? "");
       setNotificationPreferences(session?.user.user_metadata?.notification_preferences ?? {});
-      if (session && loadedUser.current !== session.user.id) { setCloudReady(false); cloudSnapshot.current = null; activeHouseholdRef.current = ""; loadedUser.current = session.user.id; void getProfilePhotoUrl(session.user.id).then((url) => { if (active) setProfilePhotoUrl(url); }); setDeviceLocked(event === "INITIAL_SESSION" && localStorage.getItem(`baanjai-pin-device-${session.user.id}`) === "enabled"); setTimeout(() => { if (active) { void loadHouseholdData(undefined, session.user.id).catch((error) => setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ")); void isAppAdmin().then((value) => { if (active && loadedUser.current === session.user.id) setAppAdmin(value); }).catch(() => setAppAdmin(false)); } }, 0); }
-      if (!session) { loadedUser.current = ""; setDeviceLocked(false); setProfilePhotoUrl(""); setAppAdmin(false); setShowAdmin(false); setRecoveryMode(false); setCloudReady(false); setCloudError(""); setHouseholdId(""); setDefaultHouseholdId(""); setHouseholds([]); setPendingLocalImport(null); cloudSnapshot.current = null; activeHouseholdRef.current = ""; }
+      if (session && loadedUser.current !== session.user.id) { setCloudReady(false); cloudSnapshot.current = null; activeHouseholdRef.current = ""; loadedUser.current = session.user.id; setSignedInUserId(session.user.id); void getProfilePhotoUrl(session.user.id).then((url) => { if (active) setProfilePhotoUrl(url); }); setDeviceLocked(event === "INITIAL_SESSION" && localStorage.getItem(`baanjai-pin-device-${session.user.id}`) === "enabled"); setTimeout(() => { if (active) { void loadHouseholdData(undefined, session.user.id).catch((error) => setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ")); void isAppAdmin().then((value) => { if (active && loadedUser.current === session.user.id) setAppAdmin(value); }).catch(() => setAppAdmin(false)); } }, 0); }
+      if (!session) { loadedUser.current = ""; setSignedInUserId(""); setDeviceLocked(false); setProfilePhotoUrl(""); setAppAdmin(false); setShowAdmin(false); setRecoveryMode(false); setCloudReady(false); setCloudError(""); setHouseholdId(""); setDefaultHouseholdId(""); setHouseholds([]); setPendingLocalImport(null); cloudSnapshot.current = null; activeHouseholdRef.current = ""; }
     });
     return () => { active = false; data.subscription.unsubscribe(); };
   }, [loadHouseholdData]);
@@ -640,7 +641,19 @@ export default function Home() {
       void client.removeChannel(channel);
     };
   }, [cloudReady, householdId, refreshCurrentHousehold]);
-  useEffect(() => { setNotificationNow(Date.now()); const timer = setInterval(() => setNotificationNow(Date.now()), 60_000); return () => clearInterval(timer); }, []);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      clearTimeout(timer);
+      const now = Date.now();
+      setNotificationNow(now);
+      // All reminder inputs use minutes. Align to the next minute rather than app-open time.
+      timer = setTimeout(tick, 60_000 - now % 60_000 + 10);
+    };
+    const visible = () => { if (document.visibilityState === "visible") tick(); };
+    tick(); window.addEventListener("focus", visible); document.addEventListener("visibilitychange", visible);
+    return () => { clearTimeout(timer); window.removeEventListener("focus", visible); document.removeEventListener("visibilitychange", visible); };
+  }, []);
   useEffect(() => {
     if (!householdId || !cloudReady) { setHouseholdPeople([]); return; }
     let current = true;
@@ -723,25 +736,6 @@ export default function Home() {
     return [...stock, ...shopping, ...scheduledAlerts(entries, notificationNow, language, loadedUser.current)].filter((alert) => { const entry = entries.find((item) => item.id === alert.entryId); return !entry || notificationPreferences[entry.category] !== false; }).sort((a, b) => b.occurredAt - a.occurredAt).slice(0, 80);
   }, [entries, stockAlerts, notificationNow, language, authStatus, notificationPreferences]);
   const unreadAlertCount = inAppAlerts.filter((alert) => !readAlertKeys.has(alert.key)).length;
-  const enablePush = async () => {
-    if (!("Notification" in window) || !("serviceWorker" in navigator) || !cloud) { setNotice(ui("อุปกรณ์นี้ยังไม่รองรับเว็บพุช", "Web Push is unavailable here")); return; }
-    const permission = await Notification.requestPermission();
-    setNotificationPermission(permission);
-    if (permission !== "granted") return;
-    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    if (!publicKey) { setNotice(ui("การส่งแจ้งเตือนยังไม่ได้ตั้งค่าบนเซิร์ฟเวอร์", "Push server is not configured yet")); return; }
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapidBytes(publicKey) });
-      const { data: userData, error: userError } = await cloud.auth.getUser();
-      if (userError || !userData.user) throw userError ?? new Error("Sign in required");
-      const json = subscription.toJSON();
-      const { error } = await cloud.from("push_subscriptions").upsert({ endpoint: subscription.endpoint, user_id: userData.user.id, p256dh: json.keys?.p256dh, auth_key: json.keys?.auth }, { onConflict: "endpoint" });
-      if (error) throw error;
-      setPushReady(true);
-      setNotice(ui("เปิดการแจ้งเตือนแล้ว", "Notifications enabled"));
-    } catch { setNotice(ui("เปิดเว็บพุชไม่สำเร็จ กรุณาลองอีกครั้ง", "Could not enable Web Push")); }
-  };
   const signOut = async () => {
     if (!cloud) return;
     try {
@@ -750,12 +744,13 @@ export default function Home() {
         if (subscription) { await cloud.from("push_subscriptions").delete().eq("endpoint", subscription.endpoint); await subscription.unsubscribe(); }
       }
     } catch { /* The server removes expired endpoints if the browser cannot unsubscribe. */ }
-    setPushReady(false);
+    phoneNotifications.clearDeviceState();
     await cloud.auth.signOut();
   };
   useEffect(() => {
     if (!ready || notificationPermission !== "granted" || stockAlerts.length === 0) return;
     for (const { entry, days, quantity } of stockAlerts) {
+      if (notificationPreferences[entry.category] === false) continue;
       const key = `baanjai-stock-alert-${entry.id}-${today()}`;
       if (localStorage.getItem(key)) continue;
       const title = `ใกล้หมด: ${entry.name}`;
@@ -765,7 +760,7 @@ export default function Home() {
         void registrationPromise.then((registration) => registration?.showNotification ? registration.showNotification(title, { body, tag: key, icon: "/icon-192.png" }) : Promise.resolve().then(() => { new Notification(title, { body, tag: key }); })).then(() => localStorage.setItem(key, "shown")).catch(() => undefined);
       } catch { /* Browser notifications are optional; the in-app alert remains available. */ }
     }
-  }, [ready, notificationPermission, stockAlerts]);
+  }, [ready, notificationPermission, stockAlerts, notificationPreferences]);
   const recordStockUse = (entry: Entry) => {
     if (!entry.stock || entry.stock.autoDeduct !== false) return;
     const amount = Math.min(stockRemaining(entry.stock), entry.stock.dailyUse);
@@ -1248,7 +1243,7 @@ export default function Home() {
       <header className="topbar"><div className="breadcrumb"><button type="button" className="breadcrumb-house" onClick={() => cloudEnabled && setTab("settings")}>{households.find((house) => house.id === householdId)?.name ?? ui("บ้านของเรา", "Our home")}</button><Icon name="chevron" size={15}/><strong>{(navItems.find((item) => item.id === tab)?.label ?? (tab === "calendar" ? ui("บันทึกแจ้งเตือน", "Calendar") : tab === "places" ? categoryLabel(placesCategory, language) : copy.history))}</strong></div><div className="top-actions"><span className={`sync-status ${cloudError ? "sync-error" : cloudSaving ? "sync-saving" : ""}`} role="status" title={cloudEnabled ? cloudError ? ui("ซิงก์มีปัญหา", "Sync issue") : cloudSaving ? ui("กำลังบันทึก", "Saving") : ui("บันทึกแล้ว", "Saved") : copy.synced} aria-label={cloudEnabled ? cloudError ? ui("ซิงก์มีปัญหา", "Sync issue") : cloudSaving ? ui("กำลังบันทึก", "Saving") : ui("บันทึกแล้ว", "Saved") : copy.synced}><i/></span><button type="button" className="language-toggle" onClick={() => setLanguage((current) => current === "th" ? "en" : "th")} aria-label={language === "th" ? "เปลี่ยนภาษาเป็นอังกฤษ" : "Switch language to Thai"} title={language === "th" ? "English" : "ไทย"}>{language.toUpperCase()}</button><button className="icon-button notification-button" aria-label={ui(`การแจ้งเตือนที่ยังไม่อ่าน ${unreadAlertCount} รายการ`, `${unreadAlertCount} unread notifications`)} aria-expanded={showAlerts} onClick={() => setShowAlerts((value) => !value)}><Icon name="bell"/>{unreadAlertCount > 0 && <span className="notification-count">{unreadAlertCount > 99 ? "99+" : unreadAlertCount}</span>}</button><button className="avatar top-avatar" aria-label={ui("จัดการบัญชีและบ้าน", "Account and household")} onClick={() => setTab("settings")}>{profilePhotoUrl ? <img src={profilePhotoUrl} alt=""/> : "ค"}</button></div></header>
       {cloudError && <div className="cloud-sync-error" role="alert">{ui("บันทึกออนไลน์ไม่สำเร็จ", "Online save failed")}: {cloudError} <button type="button" onClick={() => setSyncRevision((value) => value + 1)}>{ui("ลองอีกครั้ง", "Retry")}</button></div>}
       {pendingLocalImport && <div className="cloud-import-banner"><span>{ui(`พบบันทึกเดิม ${pendingLocalImport.entries.length} รายการในเครื่องนี้`, `Found ${pendingLocalImport.entries.length} local records on this device`)}</span><button type="button" onClick={() => { setEntries(pendingLocalImport.entries); setExtraCategories(pendingLocalImport.categories); setPendingLocalImport(null); setNotice(ui("กำลังนำข้อมูลเดิมเข้าบัญชี", "Importing local records")); }}>{ui("นำเข้าบัญชี", "Import")}</button><button type="button" onClick={() => setPendingLocalImport(null)}>{ui("ภายหลัง", "Later")}</button></div>}
-      {showAlerts && <section className="alerts-popover" aria-label={ui("รายการแจ้งเตือน", "Notifications")}><div className="alerts-heading"><div><strong>{ui("การแจ้งเตือน", "Notifications")}</strong><small>{ui(`${unreadAlertCount} รายการที่ยังไม่อ่าน`, `${unreadAlertCount} unread`)}</small></div><button type="button" aria-label={ui("ปิดการแจ้งเตือน", "Close notifications")} onClick={() => setShowAlerts(false)}><Icon name="close" size={16}/></button></div>{inAppAlerts.length ? <><ul>{inAppAlerts.map((alert) => <li key={alert.key} className={readAlertKeys.has(alert.key) ? "is-read" : "is-unread"}><span className="alert-dot"/><div><strong>{alert.title}</strong><small>{alert.body}</small><small>{new Date(alert.occurredAt).toLocaleString(language === "en" ? "en-GB" : "th-TH", { dateStyle: "medium", timeStyle: "short" })}</small></div><button type="button" onClick={() => { void markAlertsRead([alert.key]); setShowAlerts(false); openDetail(alert.entryId, alert.occurrenceDate); }}>{ui("ดู", "View")}</button></li>)}</ul>{unreadAlertCount > 0 && <button className="alerts-mark-all" type="button" onClick={() => void markAlertsRead(inAppAlerts.map((alert) => alert.key))}>{ui("ทำเครื่องหมายว่าอ่านทั้งหมด", "Mark all as read")}</button>}</> : <p className="alerts-empty">{ui("ยังไม่มีการแจ้งเตือน", "No notifications yet")}</p>}{notificationPermission !== "denied" && !pushReady && <button className="enable-notifications" type="button" onClick={() => void enablePush()}>{ui("เปิดแจ้งเตือนบนโทรศัพท์", "Enable phone notifications")}</button>}{pushReady && <p className="notification-help">{ui("เปิดเว็บพุชแล้ว", "Web Push enabled")}</p>}{notificationPermission === "denied" && <p className="notification-help">{ui("การแจ้งเตือนถูกปิดไว้ เปิดสิทธิ์ได้ในการตั้งค่าเว็บไซต์", "Notifications are blocked in site settings")}</p>}{notificationPermission === "unsupported" && <p className="notification-help">{ui("เบราว์เซอร์นี้ไม่รองรับการแจ้งเตือน", "This browser does not support notifications")}</p>}</section>}
+      {showAlerts && <section className="alerts-popover" aria-label={ui("รายการแจ้งเตือน", "Notifications")}><div className="alerts-heading"><div><strong>{ui("การแจ้งเตือน", "Notifications")}</strong><small>{ui(`${unreadAlertCount} รายการที่ยังไม่อ่าน`, `${unreadAlertCount} unread`)}</small></div><button type="button" aria-label={ui("ปิดการแจ้งเตือน", "Close notifications")} onClick={() => setShowAlerts(false)}><Icon name="close" size={16}/></button></div>{inAppAlerts.length ? <><ul>{inAppAlerts.map((alert) => <li key={alert.key} className={readAlertKeys.has(alert.key) ? "is-read" : "is-unread"}><span className="alert-dot"/><div><strong>{alert.title}</strong><small>{alert.body}</small><small>{new Date(alert.occurredAt).toLocaleString(language === "en" ? "en-GB" : "th-TH", { dateStyle: "medium", timeStyle: "short" })}</small></div><button type="button" onClick={() => { void markAlertsRead([alert.key]); setShowAlerts(false); openDetail(alert.entryId, alert.occurrenceDate); }}>{ui("ดู", "View")}</button></li>)}</ul>{unreadAlertCount > 0 && <button className="alerts-mark-all" type="button" onClick={() => void markAlertsRead(inAppAlerts.map((alert) => alert.key))}>{ui("ทำเครื่องหมายว่าอ่านทั้งหมด", "Mark all as read")}</button>}</> : <p className="alerts-empty">{ui("ยังไม่มีการแจ้งเตือน", "No notifications yet")}</p>}{notificationPermission !== "denied" && !pushReady && <button className="enable-notifications" type="button" disabled={phoneNotifications.busy} onClick={() => void enablePush()}>{ui("เปิดแจ้งเตือนบนโทรศัพท์", "Enable phone notifications")}</button>}{pushReady && <p className="notification-help">{ui("เปิดเว็บพุชแล้ว", "Web Push enabled")}</p>}{notificationPermission === "denied" && <p className="notification-help">{ui("การแจ้งเตือนถูกปิดไว้ เปิดสิทธิ์ได้ในการตั้งค่าเว็บไซต์", "Notifications are blocked in site settings")}</p>}{notificationPermission === "unsupported" && <p className="notification-help">{ui("เบราว์เซอร์นี้ไม่รองรับการแจ้งเตือน", "This browser does not support notifications")}</p>}</section>}
       {appUpdateReady && <aside className="app-update-tab" role="status"><span className="app-update-icon"><Icon name="download" size={22}/></span><span className="app-update-copy"><strong>{ui("มีแอปเวอร์ชันใหม่", "A new app version is ready")}</strong><small>{ui("กดอัปเดตได้ทันที โดยไม่ต้องปิดแอป", "Update now without closing the app")}</small></span><button type="button" onClick={applyAppUpdate}>{ui("อัปเดตตอนนี้", "Update now")}</button></aside>}
 
       <div className="content-area">
@@ -1256,7 +1251,7 @@ export default function Home() {
           onSave={saveTravelRecord} onRemove={removeTravelRecord} onCalendar={openTravelCalendar}/>
         : tab === "places" ? <PlacesPage key={householdId} entries={entries} language={language} onAdd={openPlaceEditor} onOpen={openDetail} onStar={togglePlaceStar}/>
         : tab === "vault" ? <PasswordVault key={loadedUser.current || "local"} scope={loadedUser.current || "local"} language={language}/>
-        : tab === "settings" ? <SettingsPage houses={households} activeId={householdId} defaultHouseholdId={defaultHouseholdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} userEmail={userEmail} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} userDisplayName={userDisplayName} onDisplayNameChange={async (name) => { if (!cloud) return false; const { error } = await cloud.auth.updateUser({ data: { full_name: name } }); if (error) return false; setUserDisplayName(name); return true; }} displaySettings={displaySettings} notificationPreferences={notificationPreferences} onNotificationPreferenceChange={(name, enabled) => void changeNotificationPreference(name, enabled)} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onMakeDefault={(id) => void makeDefaultHousehold(id)} onRename={(id, name) => renameCurrentHousehold(id, name)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => void signOut()}/> : <>
+        : tab === "settings" ? <SettingsPage houses={households} activeId={householdId} defaultHouseholdId={defaultHouseholdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} userEmail={userEmail} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} userDisplayName={userDisplayName} onDisplayNameChange={async (name) => { if (!cloud) return false; const { error } = await cloud.auth.updateUser({ data: { full_name: name } }); if (error) return false; setUserDisplayName(name); return true; }} displaySettings={displaySettings} phoneNotifications={<NotificationSettings language={language} permission={notificationPermission} hint={phoneNotifications.hint} enabled={pushReady} busy={phoneNotifications.busy} message={phoneNotifications.message} onEnable={() => void enablePush()}/>} notificationPreferences={notificationPreferences} onNotificationPreferenceChange={(name, enabled) => void changeNotificationPreference(name, enabled)} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onMakeDefault={(id) => void makeDefaultHousehold(id)} onRename={(id, name) => renameCurrentHousehold(id, name)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => void signOut()}/> : <>
         {(tab === "home" || tab === "calendar") && <section className="welcome-row"><div><div className="eyebrow"><span className="greeting-time-icon" aria-hidden="true">{greetingIcon}</span> {headerDate}</div>{tab === "home" ? <div className="welcome-heading-line"><h1>{ui("สวัสดี", "Hello")} {userDisplayName || ui("คุณ", "you")}</h1><p>{copy.intro}</p></div> : <><h1>{ui("บันทึกแจ้งเตือน", "Calendar")}</h1><p>{ui("บันทึกและจัดการแจ้งเตือนในบ้าน", "Manage household reminders")}</p></>}</div><button className="primary-button desktop-add" onClick={openCurrentForm}><span>＋</span> {tab === "calendar" ? ui("เพิ่มการแจ้งเตือน", "Add reminder") : copy.add}</button></section>}
 
         {tab === "calendar" ? <CalendarPage key={calendarFocusDate ?? "calendar"} focusDate={calendarFocusDate} entries={entries} language={language} householdId={householdId} editTarget={calendarEditTarget} openRequest={calendarAddRequest} onEditDone={() => setCalendarEditId(null)} onSave={(entry) => { setEntries((previous) => [entry, ...previous]); setNotice(ui("บันทึกการแจ้งเตือนแล้ว", "Reminder saved"), "success"); }} onUpdate={(updated) => { setEntries((previous) => previous.map((entry) => entry.id === updated.id ? updated : entry)); setNotice(ui("บันทึกการแก้ไขแล้ว", "Changes saved"), "success"); }} onDelete={removeCalendarOccurrence} onDeletePast={() => setDeletePastAppointmentsOpen(true)} onOpenEntry={openDetail}/> : tab === "home" ? <>
@@ -1813,7 +1808,7 @@ function EntryRow({ entry, language, detailMode = false, onOpen, onDeletePhoto, 
   const income = isIncomeEntry(entry);
   const householdExpense = isFinanceCategory(entry.category) && !income;
   const financeRecord = isFinanceRecord(entry);
-  const icon = entry.kind === "service" ? "spark" : entry.kind === "note" ? "file" : income ? "wallet" : householdExpense ? "receipt" : categoryIcon ?? categories.find((category) => category.name === entry.category)?.icon ?? "tag";
+  const icon = entry.kind === "service" ? "spark" : entry.kind === "note" ? "file" : income ? "wallet" : householdExpense ? "receipt" : isMedicineEntry(entry.category, entry.name) ? "pill" : categoryIcon ?? categories.find((category) => category.name === entry.category)?.icon ?? "tag";
   const color = entry.kind === "service" ? "violet" : entry.kind === "note" ? "teal" : income ? "teal" : entry.category === "ยาและสุขภาพ" || householdExpense ? "rose" : "amber";
   const payments = entry.kind === "service" ? servicePayments(entry) : [];
   const remaining = serviceRemaining(entry);

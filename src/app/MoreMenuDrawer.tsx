@@ -22,13 +22,11 @@ export default function MoreMenuDrawer({ items, activeId, language, onNavigate, 
     setClosing(true);
     timer.current = setTimeout(action, 200);
   };
-  return <dialog id="mobile-more-menu" ref={dialog} className={`more-drawer ${closing ? "is-closing" : ""}`} aria-labelledby={titleId}
+  return <dialog id="mobile-more-menu" ref={dialog} className={`more-menu-popover ${closing ? "is-closing" : ""}`} aria-labelledby={titleId}
     onCancel={(event) => { event.preventDefault(); close(); }} onClick={(event) => { if (event.target === event.currentTarget) close(); }}>
-    <div className="more-drawer-content">
-      <header className="more-drawer-header"><span className="more-drawer-brand"><Icon name="home" size={24}/></span><div><small>{en ? "Our Home" : "บ้านของเรา"}</small><h2 id={titleId}>{en ? "More menus" : "เมนูเพิ่มเติม"}</h2></div><button type="button" autoFocus className="icon-button" onClick={() => close()} aria-label={en ? "Close menu" : "ปิดเมนู"}><Icon name="close" size={20}/></button></header>
-      <nav className="more-drawer-nav" aria-label={en ? "More menus" : "เมนูเพิ่มเติม"}>
-        {items.map((item) => <button key={item.id} type="button" aria-current={activeId === item.id ? "page" : undefined} onClick={() => close(() => onNavigate(item.id))}><span className="more-drawer-icon"><Icon name={item.icon} size={22}/></span><span>{item.label}</span><Icon name="chevron" size={17}/></button>)}
-      </nav>
-    </div>
+    <h2 id={titleId} className="visually-hidden">{en ? "More menus" : "เมนูเพิ่มเติม"}</h2>
+    <nav className="mobile-more-menu" aria-label={en ? "More menus" : "เมนูเพิ่มเติม"}>
+      {items.map((item, index) => <button key={item.id} type="button" autoFocus={index === 0} aria-current={activeId === item.id ? "page" : undefined} onClick={() => close(() => onNavigate(item.id))}><Icon name={item.icon} size={20}/><span>{item.label}</span></button>)}
+    </nav>
   </dialog>;
 }
