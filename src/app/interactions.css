@@ -104,6 +104,45 @@ a > svg { vertical-align: middle; }
 .startup-update-actions button + button { background: #ffffff14; color: white; }
 .startup-update-actions button:focus-visible { outline: 3px solid white; outline-offset: 3px; }
 .startup-splash .startup-update-error { color: #fff; font-size: 12px; line-height: 1.7; margin-top: 12px; }
+.startup-update-footer { position: absolute; inset: auto 24px calc(22px + env(safe-area-inset-bottom)); max-width: 440px; margin: 0 auto; text-align: center; }
+.startup-update-footer .startup-update-actions { margin-top: 0; }
+.startup-update-footer .startup-update-error { margin: 0 auto 12px; max-width: 340px; }
+.startup-update-footer > p { font-size: 12px; }
+.preparation-back { margin-bottom: 16px; }
+.preparations-page .feature-heading > div { min-width: 0; }
+.preparations-page .feature-heading h1 { overflow-wrap: anywhere; }
+.preparations-page .feature-heading p { display: flex; align-items: center; gap: 6px; }
+.preparations-page .feature-heading > .primary-button { flex: none; }
+.preparation-group-list { list-style: none; display: grid; gap: 10px; margin: 0; padding: 0; }
+.preparation-group-row { display: grid; grid-template-columns: 27px minmax(0,1fr) auto; gap: 9px; align-items: center; padding: 13px 11px; }
+.preparation-number { display: grid; place-items: center; width: 27px; height: 30px; border-radius: 9px; background: color-mix(in srgb,var(--blue) 10%,var(--surface)); color: var(--blue); font-size: 12px; }
+.preparation-group-open { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 0; background: transparent; border: 0; color: var(--ink); text-align: start; }
+.preparation-group-open > span { min-width: 0; }
+.preparation-group-open strong { display: block; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.preparation-group-open small { display: flex; align-items: center; gap: 5px; margin-top: 5px; color: var(--muted); font-size: 11px; }
+.preparation-group-open > svg { flex: none; color: var(--muted); }
+.preparation-detail-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 15px; }
+.preparation-detail-tools > .secondary-button { font-size: 12px; }
+.preparation-description { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: 13px; line-height: 1.7; margin: 0 0 16px; }
+.preparation-item-row { grid-template-columns: 88px minmax(0,1fr) auto; }
+.preparation-item-row.is-complete strong { text-decoration: none; color: var(--ink); }
+.preparation-item-row .preparation-row-actions .icon-button,.preparation-group-row .preparation-row-actions .icon-button { width: 26px; height: 35px; }
+.preparation-mark-ready,.preparation-ready { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 39px; width: 88px; padding: 7px; border: 1px solid #f2bdc7; border-radius: 11px; font: inherit; font-size: 11px; white-space: nowrap; }
+.preparation-mark-ready { background: #ffeaee; color: #a43b50; }
+.preparation-mark-ready:hover { background: #ffdae3; border-color: #e899aa; }
+.preparation-ready { background: #e0f5e8; border-color: #b8e2c9; color: #207249; }
+.preparation-mark-ready > svg,.preparation-ready > svg { flex: none; }
+[data-theme="dark"] .preparation-mark-ready { background: #5d303c; border-color: #865060; color: #ffdbe1; }
+[data-theme="dark"] .preparation-ready { background: #234b3a; border-color: #3b6a54; color: #bdeed0; }
+.preparation-editor { width: min(460px,calc(100% - 24px)); max-height: calc(var(--app-viewport-height,100dvh) - 32px); }
+.preparation-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.preparation-editor-head h2 { margin: 0; font-size: 20px; line-height: 1.5; }
+.preparation-editor-head > button { flex: none; }
+.preparation-date-field { position: relative; display: block; }
+.preparation-date-field > input { width: 100%; padding-right: 40px; min-height: 45px; appearance: none; }
+.preparation-date-field > svg { position: absolute; top: 50%; right: 12px; transform: translateY(-50%); pointer-events: none; color: var(--muted); }
+.preparation-date-field input::-webkit-calendar-picker-indicator { opacity: 0; }
+@media (max-height: 650px) { .startup-splash.has-update .startup-splash-copy { top: 34%; } }
 @media (prefers-reduced-motion: reduce) { .more-menu-popover,.more-menu-popover.is-closing { animation: none; } }
 
 

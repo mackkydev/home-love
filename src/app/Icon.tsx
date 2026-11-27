@@ -1,6 +1,7 @@
 export default function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true as const };
   const paths: Record<string, React.ReactNode> = {
+    undo: <><path d="M4 10h10a6 6 0 0 1 0 12h-3M4 10l5-5m-5 5 5 5"/></>,
     checklist: <><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m7 8 1 1 2-2m3 1h4m-10 7 1 1 2-2m3 1h4"/></>,
     "star-filled": <path fill="currentColor" d="m12 3 2.8 5.7 6.3.9-4.5 4.4 1 6.3-5.6-3-5.6 3 1.1-6.3L3 9.6l6.2-.9Z"/>,
     circle: <circle cx="12" cy="12" r="9"/>,
