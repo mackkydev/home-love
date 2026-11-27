@@ -1,3 +1,4 @@
+import Icon from "./Icon";
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "./refinements.css";
@@ -35,7 +36,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <ToastProvider><AppStartupGate><AccountAccessGate>{children}</AccountAccessGate></AppStartupGate></ToastProvider>
         <div className="portrait-only-overlay" role="status" aria-live="polite">
           <div className="portrait-only-card">
-            <span className="portrait-only-icon" aria-hidden="true">↻</span>
+            <span className="portrait-only-icon" aria-hidden="true"><Icon name="rotate" size={38}/></span>
             <strong className="portrait-only-message th">กรุณาหมุนโทรศัพท์เป็นแนวตั้ง</strong>
             <strong className="portrait-only-message en">Please turn your phone upright</strong>
             <p className="portrait-only-message th">บ้านของเราใช้งานบนมือถือในแนวตั้ง</p>

@@ -1,6 +1,18 @@
 export default function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true as const };
   const paths: Record<string, React.ReactNode> = {
+    checklist: <><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m7 8 1 1 2-2m3 1h4m-10 7 1 1 2-2m3 1h4"/></>,
+    "star-filled": <path fill="currentColor" d="m12 3 2.8 5.7 6.3.9-4.5 4.4 1 6.3-5.6-3-5.6 3 1.1-6.3L3 9.6l6.2-.9Z"/>,
+    circle: <circle cx="12" cy="12" r="9"/>,
+    "check-circle": <><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></>,
+    sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></>,
+    sunrise: <><path d="M3 19h18M5 15h14a7 7 0 0 0-14 0Zm7-13v5m-3-2 3-3 3 3M3 8l2 2m14 0 2-2"/></>,
+    sunset: <><path d="M3 19h18M5 15h14a7 7 0 0 0-14 0Zm7-13v5m-3-3 3 3 3-3M3 8l2 2m14 0 2-2"/></>,
+    moon: <path d="M21 13.4A9 9 0 0 1 10.6 3 9 9 0 1 0 21 13.4Z"/>,
+    contrast: <><circle cx="12" cy="12" r="9"/><path d="M12 3v18M15 6v12m3-9v6"/></>,
+    external: <><path d="M14 3h7v7m0-7L10 14"/><path d="M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/></>,
+    rotate: <><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M10 18h4M3 11V6l3 2m15 5v5l-3-2"/></>,
+    filter: <><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></>,
     pill: <g transform="rotate(45 12 12)"><rect x="7" y="2" width="10" height="20" rx="5"/><path d="M7 12h10"/></g>,
     display: <><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></>,
     chart: <><path d="M4 3v18h17M8 16v-4m5 4V7m5 9v-6"/></>,

@@ -6,17 +6,12 @@ import { externalWebUrl } from "@/lib/web-url";
 import PhotoCropField from "./PhotoCropField";
 import Icon from "./Icon";
 import ConfirmDialog from "./ConfirmDialog";
+import TripDateTabs from "./TripDateTabs";
 
 type Language = "th" | "en";
 type SourceRecord = Omit<TravelRecord, "kind" | "calendar" | "travel"> & { kind: string; calendar?: CalendarInfo; travel?: TravelInfo; photos?: string[] };
 function dateText(date: string, language: Language) {
   return new Date(`${date}T00:00:00`).toLocaleDateString(language === "en" ? "en-GB" : "th-TH", { day: "numeric", month: "short", year: "numeric" });
-}
-
-function changeDay(date: string, step: number) {
-  const day = new Date(`${date}T00:00:00Z`);
-  day.setUTCDate(day.getUTCDate() + step);
-  return day.toISOString().slice(0, 10);
 }
 
 function TravelPhoto({ source, alt }: { source?: string; alt: string }) {
@@ -148,6 +143,7 @@ export default function TravelPage({ entries, language, today, selection, onSele
   onCalendar: (date: string) => void;
 }) {
   const ui = (th: string, en: string) => language === "en" ? en : th;
+  const dayTabsId = useId();
   const records = entries.filter(isTravelRecord);
   const trips = records.filter((entry) => entry.travel.kind === "trip").sort((a, b) => b.date.localeCompare(a.date));
   const trip = trips.find((entry) => entry.id === selection?.id);
@@ -187,7 +183,7 @@ export default function TravelPage({ entries, language, today, selection, onSele
           {(end !== trip.date || tripInfo?.endTime) && <> – {end !== trip.date && dateText(end, language)}{tripInfo?.endTime && " " + tripInfo.endTime}</>}</p>
           {tripInfo?.details && <p className="travel-overview-details">{tripInfo.details}</p>}
           <div className="feature-actions">
-            {tripMap && <a className="secondary-button" href={tripMap} target="_blank" rel="noopener noreferrer"><Icon name="map" size={16}/>{ui("เปิด Google Maps ↗", "Open Google Maps ↗")}</a>}
+            {tripMap && <a className="secondary-button" href={tripMap} target="_blank" rel="noopener noreferrer"><Icon name="map" size={16}/>{ui("เปิด Google Maps", "Open Google Maps")}<Icon name="external" size={14}/></a>}
             <button type="button" className="secondary-button" onClick={() => onCalendar(date)}><Icon name="calendar" size={16}/>{ui("ดูในปฏิทิน", "View calendar")}</button>
             <button type="button" className="secondary-button" onClick={() => setEditor({ kind: "trip", entry: trip })}><Icon name="edit" size={16}/>{ui("แก้ไขทริป", "Edit trip")}</button>
             <button type="button" className="secondary-button" onClick={() => { setEditor(null); setRemoving(trip); }}><Icon name="trash" size={16}/>{ui("ลบทริป", "Delete trip")}</button>
@@ -196,11 +192,11 @@ export default function TravelPage({ entries, language, today, selection, onSele
       </article>
       <section className="travel-day">
         <div className="travel-day-bar">
-          <button type="button" className="secondary-button" aria-label={ui("วันก่อนหน้า", "Previous day")} disabled={date === trip.date} onClick={() => navigate({ id: trip.id, date: changeDay(date, -1) })}>‹</button>
-          <label className="form-label">{ui("แผนวันที่", "Itinerary date")}<input type="date" min={trip.date} max={end} value={date} onInput={(event) => { const value = event.currentTarget.value; if (value >= trip.date && value <= end) navigate({ id: trip.id, date: value }); }}/></label>
-          <button type="button" className="secondary-button" aria-label={ui("วันถัดไป", "Next day")} disabled={date === end} onClick={() => navigate({ id: trip.id, date: changeDay(date, 1) })}>›</button>
+          <h3><Icon name="calendar" size={18}/>{ui("แผนรายวัน", "Daily itinerary")}</h3>
           <button type="button" className="primary-button" onClick={() => { setRemoving(null); setEditor({ kind: "stop" }); }}><Icon name="plus" size={16}/>{ui("เพิ่มสถานที่", "Add stop")}</button>
         </div>
+        <TripDateTabs id={dayTabsId} start={trip.date} end={end} value={date} language={language} onChange={(nextDate) => navigate({ id: trip.id, date: nextDate })}/>
+        <div role="tabpanel" id={`${dayTabsId}-panel`} aria-labelledby={`${dayTabsId}-${date}`}>
         {dayStops.length ? <ol className="travel-stops">
           {dayStops.map((stop) => {
             if (stop.travel.kind !== "stop") return null;
@@ -213,7 +209,7 @@ export default function TravelPage({ entries, language, today, selection, onSele
                 {stop.travel.details && <p>{stop.travel.details}</p>}
                 {stop.travel.contact && <p><strong>{ui("ติดต่อ", "Contact")}</strong> {stop.travel.contact}</p>}
                 <div className="feature-actions">
-                  {location && <a className="secondary-button" href={location} target="_blank" rel="noopener noreferrer"><Icon name="map" size={16}/>{ui("เปิดแผนที่ ↗", "Open map ↗")}</a>}
+                  {location && <a className="secondary-button" href={location} target="_blank" rel="noopener noreferrer"><Icon name="map" size={16}/>{ui("เปิดแผนที่", "Open map")}<Icon name="external" size={14}/></a>}
                   <button type="button" className="secondary-button" onClick={() => { setRemoving(null); setEditor({ kind: "stop", entry: stop }); }}><Icon name="edit" size={16}/>{ui("แก้ไข", "Edit")}</button>
                   <button type="button" className="secondary-button" onClick={() => { setEditor(null); setRemoving(stop); }}><Icon name="trash" size={16}/>{ui("ลบ", "Delete")}</button>
                 </div>
@@ -221,6 +217,7 @@ export default function TravelPage({ entries, language, today, selection, onSele
             </li>;
           })}
         </ol> : <p className="feature-card">{ui("ยังไม่มีสถานที่ในวันนี้", "No stops planned for this day.")}</p>}
+        </div>
       </section>
     </>}
   </section>;

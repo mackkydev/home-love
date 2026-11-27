@@ -306,7 +306,7 @@ export default function PasswordVault({ scope, language }: { scope: string; lang
                 {/* eslint-disable-next-line @next/next/no-img-element -- Logo is a locally decrypted data URL. */}
                 {item.logo ? <img src={item.logo} alt=""/> : <Icon name="lock" size={20}/>}
               </span>
-              <div><h2>{item.name}</h2><p>{item.username}</p>{item.link && (href ? <a href={href} target="_blank" rel="noopener noreferrer">{item.link} ↗</a> : <p>{item.link}</p>)}</div>
+              <div><h2>{item.name}</h2><p>{item.username}</p>{item.link && (href ? <a href={href} target="_blank" rel="noopener noreferrer">{item.link}<Icon name="external" size={14}/></a> : <p>{item.link}</p>)}</div>
             </div>
             <div className="feature-actions">
               <button type="button" className="secondary-button" aria-pressed={revealed === item.id} onClick={() => setRevealed(revealed === item.id ? null : item.id)}><Icon name={revealed === item.id ? "eye-off" : "eye"} size={16}/>{revealed === item.id ? ui("ซ่อนรหัส", "Hide password") : ui("แสดงรหัส", "Show password")}</button>

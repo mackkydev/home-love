@@ -1,4 +1,5 @@
 "use client";
+import Icon from "./Icon";
 import { useStartupLoading } from "./AppStartupGate";
 import PasswordInput from "./PasswordInput";
 
@@ -98,7 +99,7 @@ export default function CloudAuth({
 
   if (checking && !recoveryMode && !cloudError) return null;
   return <main className="cloud-auth-page"><section className="cloud-auth-card">
-    <span className="brand-mark" aria-hidden="true">⌂</span>
+    <span className="brand-mark" aria-hidden="true"><Icon name="home" size={21}/></span>
     <h1>{en ? "Our Home" : "บ้านของเรา"}</h1>
     <p>{en ? "Keep your household records together, privately." : "บันทึกเรื่องในบ้านร่วมกันอย่างเป็นส่วนตัว"}</p>
     {checking && !recoveryMode ? <><p>{cloudError ? (en ? "Could not load your household." : "โหลดข้อมูลของบ้านไม่สำเร็จ") : (en ? "Connecting to your household..." : "กำลังเชื่อมต่อข้อมูลของบ้าน...")}</p>{cloudError && <p className="cloud-error" role="alert">{cloudError}</p>}{cloudError && <div className="cloud-auth-retry"><button type="button" className="primary-button" onClick={onRetry}>{en ? "Try again" : "ลองอีกครั้ง"}</button><button type="button" className="secondary-button" onClick={() => void cloud?.auth.signOut()}>{en ? "Sign out" : "ออกจากระบบ"}</button></div>}</> : <>

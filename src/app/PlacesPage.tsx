@@ -23,7 +23,7 @@ function PlacePhoto({ photo, alt }: { photo?: string; alt: string }) {
 function PlaceStar({ entry, language, onStar }: { entry: PlaceRecord; language: Language; onStar: PlaceAction }) {
   const label = language === "en" ? "Star " + entry.name : "ติดดาว " + entry.name;
   return <button type="button" className="place-star" aria-label={label} aria-pressed={entry.place.starred} onClick={() => onStar(entry.id)}>
-    <span aria-hidden="true">{entry.place.starred ? "★" : "☆"}</span>
+    <Icon name={entry.place.starred ? "star-filled" : "star"} size={20}/>
   </button>;
 }
 
@@ -50,7 +50,7 @@ export default function PlacesPage({ entries, language, onAdd, onOpen, onStar }:
   return <section className="feature-page places-page">
     <header className="feature-heading">
       <h1>{en ? "Starred places" : placesCategory}</h1>
-      <button type="button" className="primary-button" onClick={() => onAdd(group === "all" ? undefined : group)}>{en ? "＋ Add place" : "＋ เพิ่มสถานที่"}</button>
+      <button type="button" className="primary-button" onClick={() => onAdd(group === "all" ? undefined : group)}><Icon name="plus" size={17}/>{en ? "Add place" : "เพิ่มสถานที่"}</button>
     </header>
     <nav className="filter-chips place-filters" aria-label={en ? "Place categories" : "หมวดหมู่สถานที่"}>
       <button type="button" className={`filter-chip${group === "all" ? " selected" : ""}`} aria-pressed={group === "all"} onClick={() => setGroup("all")}><Icon name="grid" size={14}/>{en ? "All" : "ทั้งหมด"}</button>
@@ -80,7 +80,7 @@ export function PlaceDetail({ entry, language, onEdit, onDelete, onStar }: {
       {entry.place.details && <p className="place-details-text">{entry.place.details}</p>}
       {phone && <p>{en ? "Contact" : "เบอร์ติดต่อ"} <strong>{dial ? <a href={"tel:" + dial}>{phone}</a> : phone}</strong></p>}
       <div className="feature-actions">
-        {map && <a className="secondary-button" href={map} target="_blank" rel="noopener noreferrer">{en ? "Open Google Maps ↗" : "เปิด Google Maps ↗"}</a>}
+        {map && <a className="secondary-button" href={map} target="_blank" rel="noopener noreferrer">{en ? "Open Google Maps" : "เปิด Google Maps"}<Icon name="external" size={14}/></a>}
         <button type="button" className="secondary-button" onClick={onEdit}>{en ? "Edit" : "แก้ไข"}</button>
         <button type="button" className="danger-button" onClick={onDelete}>{en ? "Delete" : "ลบ"}</button>
       </div>

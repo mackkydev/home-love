@@ -47,6 +47,58 @@ html .startup-progress i { animation: none; -webkit-animation: none; transform: 
 .phone-notification-status { display: flex; gap: 8px; align-items: center; padding: 12px; margin: 14px 0; background: var(--canvas); border-radius: 12px; font-size: 12px; }
 .phone-notification-status.is-enabled { color: #167b57; background: #e4f6ed; }
 .phone-notifications p { line-height: 1.7; }
+.more-menu-popover .mobile-more-menu button:focus,
+.more-menu-popover .mobile-more-menu button:focus-visible { outline: none; box-shadow: none; -webkit-tap-highlight-color: transparent; }
+.more-menu-popover .mobile-more-menu button:focus-visible { background: var(--canvas); }
+.feature-shortcuts button[data-tool="travel"] { background: linear-gradient(125deg,#d8eaff,#c9f0e9); border-color: #b7d7ec; color: #205a89; }
+.feature-shortcuts button[data-tool="vault"] { background: linear-gradient(125deg,#e7ddff,#f8def1); border-color: #dbc9f3; color: #6848a0; }
+.feature-shortcuts button[data-tool] > span { background: #ffffffa6; color: inherit; }
+.feature-shortcuts button[data-tool] > svg { color: inherit; }
+[data-theme="dark"] .feature-shortcuts button[data-tool="travel"] { background: linear-gradient(125deg,#193c60,#194a49); border-color: #326075; color: #bdeaff; }
+[data-theme="dark"] .feature-shortcuts button[data-tool="vault"] { background: linear-gradient(125deg,#3c2b60,#54324c); border-color: #624573; color: #ebd2ff; }
+[data-theme="dark"] .feature-shortcuts button[data-tool] > span { background: #ffffff14; }
+.travel-day-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.travel-day-bar h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; }
+.travel-day-bar > .primary-button { flex: none; margin: 0; }
+.travel-date-tabs { display: flex; gap: 9px; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding: 4px 1px 14px; margin: 12px 0 2px; scroll-snap-type: x proximity; }
+.travel-date-tabs::-webkit-scrollbar { display: none; }
+.travel-date-tabs > button { display: grid; gap: 5px; flex: none; min-width: 130px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); color: var(--muted); text-align: start; scroll-snap-align: center; font: inherit; }
+.travel-date-tabs strong { color: var(--ink); font-size: 13px; white-space: nowrap; font-weight: 600; }
+.travel-date-tabs small { font-size: 11px; }
+.travel-date-tabs > button[aria-selected="true"] { background: var(--blue); border-color: var(--blue); color: #ffffffd9; box-shadow: 0 5px 12px color-mix(in srgb,var(--blue) 20%,transparent); }
+.travel-date-tabs > button[aria-selected="true"] strong { color: white; }
+.preparation-summary { flex: none; padding: 8px 11px; border-radius: 12px; background: color-mix(in srgb,var(--blue) 10%,var(--surface)); color: var(--blue); font-size: 12px; }
+.preparation-form { margin-bottom: 17px; }
+.preparation-tabs { display: flex; gap: 6px; margin-bottom: 14px; overflow-x: auto; }
+.preparation-tabs > button { display: flex; align-items: center; justify-content: center; gap: 7px; flex: 1; white-space: nowrap; min-height: 43px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--muted); font-size: 12px; }
+.preparation-tabs > button[aria-pressed="true"] { border-color: var(--blue); color: var(--blue); background: color-mix(in srgb,var(--blue) 8%,var(--surface)); }
+.preparation-tabs span { font-size: 11px; opacity: .8; }
+.preparation-list { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
+.preparation-row { display: grid; grid-template-columns: 32px minmax(0,1fr) auto; align-items: center; gap: 9px; padding: 14px 11px; }
+.preparation-check { display: grid; place-items: center; padding: 0; width: 32px; height: 40px; border: 0; background: transparent; color: var(--muted); }
+.preparation-row.is-complete .preparation-check { color: #229671; }
+.preparation-row.is-complete strong { color: var(--muted); text-decoration: line-through; }
+.preparation-row strong { display: block; font-size: 14px; overflow-wrap: anywhere; }
+.preparation-row p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.preparation-row-actions { display: flex; gap: 3px; }
+.preparation-row-actions .icon-button { width: 31px; height: 36px; color: var(--muted); }
+.preparation-empty { display: grid; justify-items: center; gap: 12px; color: var(--muted); font-size: 13px; text-align: center; }
+.greeting-time-icon { display: inline-flex; vertical-align: middle; }
+.theme-choice span,.settings-default { display: inline-flex; align-items: center; gap: 7px; }
+.theme-options button,.household-default-label,.household-row-bottom button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+a > svg { vertical-align: middle; }
+.category-select-create { justify-content: flex-start; gap: 8px; }
+@media (max-width: 760px) {
+  .app-runtime { height: var(--app-viewport-height,100dvh); min-height: 0; }
+  .app-shell { display: flex; flex-direction: column; position: fixed; inset: var(--app-viewport-top,0px) 0 auto; width: 100%; height: var(--app-viewport-height,100dvh); min-height: 0; padding: 0; overflow: hidden; }
+  .main-column,.is-list-view .main-column { flex: 1; min-height: 0; height: auto; width: 100%; display: flex; flex-direction: column; overflow: hidden; }
+  .content-area { flex: 1; min-height: 0; }
+  .mobile-nav { display: flex; position: relative; inset: auto; flex: none; width: 100%; height: auto; min-height: calc(64px + env(safe-area-inset-bottom)); padding: 6px 10px calc(8px + env(safe-area-inset-bottom)); background: var(--surface); border-bottom: 0; }
+  .mobile-nav > button { height: 50px; }
+  .mobile-nav > .mobile-add { height: 66px; }
+  .preparations-page .feature-heading { gap: 9px; align-items: start; }
+  .preparations-page h1 { font-size: 22px; }
+}
 .startup-update-actions { display: grid; gap: 10px; width: min(300px, 100%); margin: 20px auto 0; pointer-events: auto; }
 .startup-update-actions button { min-height: 45px; padding: 10px 16px; border: 1px solid #ffffff66; border-radius: 13px; background: #fff; color: #213251; font: inherit; font-size: 13px; cursor: pointer; }
 .startup-update-actions button + button { background: #ffffff14; color: white; }

@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useId, useMemo, useR
 import { resumeStartup, startupRemaining, STARTUP_DURATION_MS, UPDATE_RESUME_KEY } from "@/lib/app-updates";
 import StartupSplash from "./StartupSplash";
 import { useAppUpdates } from "./useAppUpdates";
+import { useMobileViewport } from "./useMobileViewport";
 
 type StartupContext = { setPending: (id: string, pending: boolean) => void; setLanguage: (language: "th" | "en") => void; updateReady: boolean; openUpdate: () => void };
 const Context = createContext<StartupContext | null>(null);
@@ -21,6 +22,7 @@ export function useStartupLoading(pending: boolean, language?: "th" | "en") {
 }
 
 export default function AppStartupGate({ children }: { children: React.ReactNode }) {
+  useMobileViewport();
   const [minimumDone, setMinimumDone] = useState(false);
   const [startedAt, setStartedAt] = useState(0);
   const [language, setLanguage] = useState<"th" | "en">("th");

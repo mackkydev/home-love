@@ -1,4 +1,5 @@
 "use client";
+import Icon from "./Icon";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSignupMethods, getSignupOpen, setSignupMethods, setSignupOpen, type SignupMethods } from "@/lib/cloud";
@@ -156,10 +157,10 @@ export default function AdminPanel({ language, onClose }: { language: "th" | "en
  const userHomes=()=>{setFilterUser(selectedUser);setTab("houses");setQuery("");setSearch("");setPage(0);setSelectedHouse(null);setLoading(true);};
  return <div className="modal-backdrop admin-console-backdrop">
   <section className={`admin-console ${editing ? "is-editing" : ""}`} role="dialog" aria-modal="true" aria-labelledby="admin-console-title">
-   <header className="admin-console-header"><button type="button" className="settings-back" onClick={onClose} aria-label={language === "en" ? "Back to settings" : "กลับหน้าตั้งค่า"}>‹</button><div><small>{language === "en" ? "Our Home · Administration" : "บ้านของเรา · จัดการระบบ"}</small><h2 id="admin-console-title">{language === "en" ? "Members and households" : "จัดการสมาชิกและบ้าน"}</h2></div></header>
+   <header className="admin-console-header"><button type="button" className="settings-back" onClick={onClose} aria-label={language === "en" ? "Back to settings" : "กลับหน้าตั้งค่า"}><Icon name="back" size={18}/></button><div><small>{language === "en" ? "Our Home · Administration" : "บ้านของเรา · จัดการระบบ"}</small><h2 id="admin-console-title">{language === "en" ? "Members and households" : "จัดการสมาชิกและบ้าน"}</h2></div></header>
    <nav className="admin-console-tabs" aria-label="เมนูผู้ดูแล">{([["users","ผู้ใช้"],["houses","บ้านและโควตา"],["signup","การสมัครสมาชิก"],["audit","ประวัติแอดมิน"]] as const).map(([id,label])=><button type="button" key={id} className={tab===id?"selected":""} aria-pressed={tab===id} onClick={()=>switchTab(id)}>{label}</button>)}</nav>
    <div className="admin-console-body" ref={bodyRef}>
-    {editing && <button type="button" className="admin-detail-back secondary-button" onClick={()=>{setSelectedUser(null);setSelectedHouse(null);setNotice("");showDetail();}}>‹ {language === "en" ? "Back to list" : "กลับไปรายชื่อ"}</button>}
+    {editing && <button type="button" className="admin-detail-back secondary-button" onClick={()=>{setSelectedUser(null);setSelectedHouse(null);setNotice("");showDetail();}}><Icon name="back" size={17}/>{language === "en" ? "Back to list" : "กลับไปรายชื่อ"}</button>}
     {error&&<p className="household-panel-error" role="alert">{error}</p>}{notice&&<p className="admin-success" role="status">{notice}</p>}
     {tab==="signup"?<SignupSettings language={language}/>:tab==="audit"?<section>{loading?<p role="status">กำลังโหลด…</p>:audit.length?audit.map(row=><article key={row.id} className="admin-audit-row"><strong>{row.action}</strong><span>{row.actor_email} · {new Date(row.created_at).toLocaleString("th-TH",{timeZone:"Asia/Bangkok"})}</span><small>{JSON.stringify(row.details)}</small></article>):<p>ยังไม่มีประวัติ</p>}</section>:<>
      {filterUser&&<div className="admin-filter-note"><span>บ้านของ {filterUser.email}</span><button type="button" className="text-button" onClick={()=>{setFilterUser(null);setPage(0);setSelectedHouse(null);}}>ดูทุกบ้าน</button></div>}
