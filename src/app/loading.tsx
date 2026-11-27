@@ -1,5 +1,8 @@
-import StartupSplash from "./StartupSplash";
+"use client";
+
+import { useStartupLoading } from "./AppStartupGate";
 
 export default function Loading() {
-  return <StartupSplash/>;
+  useStartupLoading(true);
+  return null;
 }

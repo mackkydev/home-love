@@ -1,5 +1,5 @@
 "use client";
-import StartupSplash from "./StartupSplash";
+import { useStartupLoading } from "./AppStartupGate";
 import PasswordInput from "./PasswordInput";
 
 import { useEffect, useState, type FormEvent } from "react";
@@ -32,6 +32,7 @@ export default function CloudAuth({
   const [signupOpen, setSignupOpenState] = useState<boolean | null>(null);
   const [signupMethods, setSignupMethodsState] = useState<SignupMethods>("both");
   const en = language === "en";
+  useStartupLoading(checking && !recoveryMode && !cloudError, language);
 
   useEffect(() => {
     let active = true;
@@ -95,7 +96,7 @@ export default function CloudAuth({
     }
   };
 
-  if (checking && !recoveryMode && !cloudError) return <StartupSplash language={language}/>;
+  if (checking && !recoveryMode && !cloudError) return null;
   return <main className="cloud-auth-page"><section className="cloud-auth-card">
     <span className="brand-mark" aria-hidden="true">⌂</span>
     <h1>{en ? "Our Home" : "บ้านของเรา"}</h1>

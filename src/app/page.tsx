@@ -13,12 +13,14 @@ import PinLock from "./PinLock";
 import TravelPage from "./TravelPage";
 import PasswordVault from "./PasswordVault";
 import Icon from "./Icon";
+import DropdownOptionsProvider, { useDropdownOptions } from "./DropdownOptionsProvider";
+import { entryDropdownOptions, optionKey, optionLabel, uniqueOptions, type DropdownGroup } from "@/lib/dropdown-options";
 import MoreMenuDrawer from "./MoreMenuDrawer";
 import { useToast } from "./ToastProvider";
 import { compressPhoto } from "@/lib/image-upload";
 import PurchaseEditor from "./PurchaseEditor";
 import ConfirmationPopup from "./ConfirmationPopup";
-import StartupSplash from "./StartupSplash";
+import { useAppStartup, useStartupLoading } from "./AppStartupGate";
 import { purchaseHistory, updatePurchaseDetails, type Purchase } from "@/lib/purchases";
 import { datePickerPosition } from "@/lib/date-picker-position";
 import { recordPerson, recordPeople } from "@/lib/record-people";
@@ -287,6 +289,7 @@ export default function Home() {
   const [travelTarget, setTravelTarget] = useState<TravelSelection | null>(null);
   const [calendarFocusDate, setCalendarFocusDate] = useState<string | null>(null);
   const [entries, setEntries] = useState<Entry[]>(initialEntries);
+  const savedDropdownOptions = useMemo(() => entryDropdownOptions(entries), [entries]);
   const [ready, setReady] = useState(false);
   const [authStatus, setAuthStatus] = useState<"checking" | "signed-out" | "signed-in">(cloudEnabled ? "checking" : "signed-in");
   const [recoveryMode, setRecoveryMode] = useState(false);
@@ -315,9 +318,7 @@ export default function Home() {
   const cloudSavingRef = useRef(false);
   const remoteRefreshRunningRef = useRef(false);
   const remoteRefreshPendingRef = useRef(false);
-  const serviceWorkerRegistrationRef = useRef<ServiceWorkerRegistration | null>(null);
-  const updateWorkerRef = useRef<ServiceWorker | null>(null);
-  const reloadForUpdateRef = useRef(false);
+
   const mediaPickerOpen = useRef(false);
   const filterChipsRef = useRef<HTMLDivElement>(null);
   const [todayValue, setTodayValue] = useState("2026-10-09");
@@ -371,7 +372,9 @@ export default function Home() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
-  const [appUpdateReady, setAppUpdateReady] = useState(false);
+  const startup = useAppStartup();
+  const appUpdateReady = startup?.updateReady ?? false;
+  useStartupLoading(!ready, language);
 
   useEffect(() => {
     const standalone = window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
@@ -569,47 +572,6 @@ export default function Home() {
     }, 450);
     return () => { clearTimeout(timer); if (!queued) cloudSavingRef.current = false; };
   }, [entries, extraCategories, cloudReady, householdId, syncRevision]);
-  useEffect(() => {
-    if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
-    if (process.env.NODE_ENV !== "production") {
-      void navigator.serviceWorker.getRegistrations().then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())));
-      void caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))));
-      return;
-    }
-    let disposed = false;
-    let updateTimer: ReturnType<typeof setInterval> | undefined;
-    const offerUpdate = (worker: ServiceWorker | null) => {
-      if (!worker || !navigator.serviceWorker.controller) return;
-      updateWorkerRef.current = worker;
-      setAppUpdateReady(true);
-    };
-    const checkForUpdate = () => { void serviceWorkerRegistrationRef.current?.update().catch(() => undefined); };
-    const onVisible = () => { if (document.visibilityState === "visible") checkForUpdate(); };
-    const onControllerChange = () => { if (reloadForUpdateRef.current) window.location.reload(); };
-    navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", checkForUpdate);
-    window.addEventListener("online", checkForUpdate);
-    void navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then((registration) => {
-      if (disposed) return;
-      serviceWorkerRegistrationRef.current = registration;
-      offerUpdate(registration.waiting);
-      registration.addEventListener("updatefound", () => {
-        const worker = registration.installing;
-        worker?.addEventListener("statechange", () => { if (worker.state === "installed") offerUpdate(worker); });
-      });
-      updateTimer = setInterval(checkForUpdate, 5 * 60_000);
-      checkForUpdate();
-    }).catch(() => undefined);
-    return () => {
-      disposed = true;
-      if (updateTimer) clearInterval(updateTimer);
-      navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", checkForUpdate);
-      window.removeEventListener("online", checkForUpdate);
-    };
-  }, []);
   useEffect(() => {
     editorOpenRef.current = Boolean(modal || purchaseEditTarget || shoppingDialog || calendarEditId || deleteTarget || deleteOccurrenceTarget || photoDeleteTarget);
     cloudSavingRef.current = cloudSaving;
@@ -1212,22 +1174,17 @@ export default function Home() {
     setShowInstallGuide(true);
   };
   const dismissInstallBanner = () => { sessionStorage.setItem("home-love-install-dismissed", "1"); setShowInstallBanner(false); setShowInstallGuide(false); };
-  const applyAppUpdate = () => {
-    const worker = updateWorkerRef.current ?? serviceWorkerRegistrationRef.current?.waiting;
-    if (!worker) { void serviceWorkerRegistrationRef.current?.update(); return; }
-    reloadForUpdateRef.current = true;
-    worker.postMessage({ type: "SKIP_WAITING" });
-  };
+  const applyAppUpdate = () => startup?.openUpdate();
   const greetingIcon = hour < 11 ? "🌤️" : hour < 16 ? "☀️" : hour < 19 ? "🌇" : "🌙";
 
-  if (!ready) return <StartupSplash language={language}/>;
+  if (!ready) return null;
   if (cloudEnabled && (recoveryMode || !cloudReady || authStatus !== "signed-in")) return <CloudAuth checking={authStatus === "checking" || (authStatus === "signed-in" && !cloudReady)} recoveryMode={recoveryMode} language={language} cloudError={cloudError} onRetry={() => void loadHouseholdData().catch((error) => setCloudError(error instanceof Error ? error.message : "เชื่อมต่อ Supabase ไม่สำเร็จ"))} onRecoveryComplete={() => setRecoveryMode(false)}/>;
   if (cloudEnabled && deviceLocked) return <PinLock language={language} onUnlock={() => setDeviceLocked(false)}/>;
 
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId);
   const calendarEditTarget = entries.find((entry) => entry.id === calendarEditId);
   const pastAppointmentCount = entries.filter((entry) => !entry.travel && entry.calendar?.type === "appointment" && calendarHasPastOccurrence(entry.calendar)).length;
-  return <main className={`app-shell ${["items", "services", "calendar", "history"].includes(tab) ? "is-list-view" : ""} ${tab === "calendar" ? "is-calendar-view" : ""}`}>
+  return <DropdownOptionsProvider key={`${signedInUserId}:${householdId}`} scope={`${signedInUserId}:${householdId}`} saved={savedDropdownOptions}><main className={`app-shell ${["items", "services", "calendar", "history"].includes(tab) ? "is-list-view" : ""} ${tab === "calendar" ? "is-calendar-view" : ""}`}>
     <aside className="sidebar">
       <a className="brand" href="#home" onClick={() => openTab("home")}><span className="brand-mark"><Icon name="home" size={21}/></span><span><strong>บ้านของเรา</strong><small>HOME ORGANIZER</small></span></a>
       <button type="button" className="house-switch" disabled={!cloudEnabled} onClick={() => setTab("settings")}><div className="house-avatar">บ</div><div className="house-details"><span>{ui("พื้นที่ครอบครัว", "Family space")}</span><strong>{households.find((house) => house.id === householdId)?.name ?? ui("บ้านของเรา", "Our home")}</strong></div><Icon name="chevron" size={16}/></button>
@@ -1312,7 +1269,7 @@ export default function Home() {
     {shoppingDialog && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShoppingDialog(null); }}>
       <form className="entry-modal shopping-modal" onSubmit={saveShopping}>
         <div className="modal-top"><div><span className="modal-kicker">{ui("รายการที่ต้องซื้อ", "Shopping list")}</span><h2>{shoppingDialog === "add" ? ui("เพิ่มรายการที่ต้องซื้อ", "Add to shopping list") : ui("แก้ไขรายการที่ต้องซื้อ", "Edit shopping item")}</h2></div><button type="button" className="icon-button" onClick={() => setShoppingDialog(null)} aria-label={ui("ปิด", "Close")}><Icon name="close"/></button></div>
-        <><div className="form-label">{ui("ชื่อสินค้า หรือเลือกรายการเดิม", "Product or existing record")}<CategorySelect value={shoppingForm.name} options={entries.filter((entry) => entry.kind === "item" && !isFinanceRecord(entry)).map((entry) => entry.name)} allowCreate language={language} placeholder={ui("ค้นหาหรือพิมพ์ชื่อใหม่", "Search or enter a new name")} onChange={(name) => { const linked = entries.find((entry) => entry.kind === "item" && !isFinanceRecord(entry) && entry.name === name); setShoppingForm((current) => ({ ...current, name, linkedEntryId: linked?.id ?? "", targetCategory: linked?.category ?? current.targetCategory, unit: linked?.purchases?.at(-1)?.unit ?? current.unit })); }}/></div>{!shoppingForm.linkedEntryId && <div className="form-label">{ui("หมวดหมู่เมื่อซื้อแล้ว", "Category after purchase")}<CategorySelect value={shoppingForm.targetCategory} options={["ของใช้ในบ้าน", "ยาและสุขภาพ", ...extraCategories.map((item) => item.name)]} allowCreate language={language} onChange={(value) => setShoppingForm((current) => ({ ...current, targetCategory: value }))}/></div>}<div className="form-row"><label className="form-label">{ui("จำนวนที่ต้องซื้อ", "Quantity to buy")}<input type="number" min="0.01" step="any" required value={shoppingForm.quantity} onChange={(event) => setShoppingForm((current) => ({ ...current, quantity: event.target.value }))}/></label><div className="form-label">{ui("หน่วยที่ซื้อ", "Purchase unit")}<CategorySelect value={shoppingForm.unit} options={purchaseUnitOptions} allowCreate language={language} onChange={(value) => setShoppingForm((current) => ({ ...current, unit: value }))}/></div></div><div className="form-label">{ui("วันที่ต้องซื้อ", "Buy by date")}<DatePicker value={shoppingForm.dueDate} onChange={(value) => setShoppingForm((current) => ({ ...current, dueDate: value }))} language={language}/></div></>
+        <><div className="form-label">{ui("ชื่อสินค้า หรือเลือกรายการเดิม", "Product or existing record")}<CategorySelect value={shoppingForm.name} memoryGroup="products" options={entries.filter((entry) => entry.kind === "item" && !isFinanceRecord(entry)).map((entry) => entry.name)} allowCreate language={language} placeholder={ui("ค้นหาหรือพิมพ์ชื่อใหม่", "Search or enter a new name")} onChange={(name) => { const linked = entries.find((entry) => entry.kind === "item" && !isFinanceRecord(entry) && optionKey(entry.name) === optionKey(name)); setShoppingForm((current) => ({ ...current, name, linkedEntryId: linked?.id ?? "", targetCategory: linked?.category ?? current.targetCategory, unit: linked?.purchases?.at(-1)?.unit ?? current.unit })); }}/></div>{!shoppingForm.linkedEntryId && <div className="form-label">{ui("หมวดหมู่เมื่อซื้อแล้ว", "Category after purchase")}<CategorySelect value={shoppingForm.targetCategory} options={["ของใช้ในบ้าน", "ยาและสุขภาพ", ...extraCategories.map((item) => item.name)]} allowCreate language={language} onChange={(value) => setShoppingForm((current) => ({ ...current, targetCategory: value }))}/></div>}<div className="form-row"><label className="form-label">{ui("จำนวนที่ต้องซื้อ", "Quantity to buy")}<input type="number" min="0.01" step="any" required value={shoppingForm.quantity} onChange={(event) => setShoppingForm((current) => ({ ...current, quantity: event.target.value }))}/></label><div className="form-label">{ui("หน่วยที่ซื้อ", "Purchase unit")}<CategorySelect value={shoppingForm.unit} memoryGroup="units" options={purchaseUnitOptions} allowCreate language={language} onChange={(value) => setShoppingForm((current) => ({ ...current, unit: value }))}/></div></div><div className="form-label">{ui("วันที่ต้องซื้อ", "Buy by date")}<DatePicker value={shoppingForm.dueDate} onChange={(value) => setShoppingForm((current) => ({ ...current, dueDate: value }))} language={language}/></div></>
         <label className="form-label">{ui("รายละเอียดเพิ่มเติม", "Details")}<textarea value={shoppingForm.note} onChange={(event) => setShoppingForm((current) => ({ ...current, note: event.target.value }))}/></label>
         <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShoppingDialog(null)}>{ui("ยกเลิก", "Cancel")}</button><button className="primary-button" type="submit">{shoppingDialog === "add" ? ui("เพิ่มรายการ", "Add item") : ui("บันทึกการแก้ไข", "Save changes")}</button></div>
       </form>
@@ -1321,7 +1278,7 @@ export default function Home() {
     {modal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { setModal(null); setEditingEntry(null); } }}>
       <form className="entry-modal record-form" onSubmit={saveEntry} aria-labelledby="record-form-title">
         <div className="modal-top"><div><span className="modal-kicker">{modal === "category" ? ui("หมวดหมู่", "Categories") : categoryLabel(form.category, language)}</span><h2 id="record-form-title">{recordTitle}</h2></div><button type="button" className="icon-button" onClick={() => { setModal(null); setEditingEntry(null); }} aria-label="ปิด"><Icon name="close"/></button></div>
-        {modal === "purchase" && <><label className="form-label">{ui("รายการ", "Item")}<input value={form.name} readOnly/></label><div className="form-label">{ui("ซื้อจากร้าน *", "Store *")}<CategorySelect value={form.store} options={[...new Set(entries.flatMap((entry) => [entry.store ?? "", ...(entry.purchases ?? []).map((purchase) => purchase.store)]).filter(Boolean))]} allowCreate language={language} placeholder={ui("ค้นหาหรือเพิ่มร้าน", "Search or add a store")} onChange={(value) => { setForm({ ...form, store: value }); setPurchaseStoreError(false); }}/>{purchaseStoreError && <span className="form-field-error" role="alert">{ui("กรุณาเลือกหรือเพิ่มร้านก่อนบันทึก", "Choose or add a store before saving")}</span>}</div><label className="form-label">{ui("ราคาต่อหน่วย (บาท)", "Unit price (THB)")}<input type="number" min="0" step="0.01" required value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })}/></label><div className="purchase-total-preview"><span>{ui("รายจ่ายรวม", "Total expense")}</span><strong>฿{currency(formPurchaseTotal)}</strong><small>{form.purchaseQuantity || "0"} × ฿{currency(Number(form.price) || 0)}</small></div><div className="form-row"><label className="form-label">{ui("จำนวนที่ซื้อ", "Quantity purchased")}<input type="number" min={shoppingTargetId ? "0.01" : "1"} step={shoppingTargetId ? "any" : "1"} required value={form.purchaseQuantity} onChange={(event) => setForm({ ...form, purchaseQuantity: event.target.value })}/></label><div className="form-label">{ui("หน่วยที่ซื้อ", "Purchase unit")}<CategorySelect value={form.purchaseUnit} options={purchaseUnitOptions} allowCreate language={language} onChange={(value) => setForm({ ...form, purchaseUnit: value })}/></div></div>{purchasePackaging && <p className="purchase-unit-note">{ui(`ข้อมูลบรรจุ: 1 ${purchasePackaging.innerUnit} = ${purchasePackaging.unitsPerInner} ${purchasePackaging.baseUnit}${purchasePackaging.outerUnit ? ` · 1 ${purchasePackaging.outerUnit} = ${(purchasePackaging.innersPerOuter ?? 1) * purchasePackaging.unitsPerInner} ${purchasePackaging.baseUnit}` : ""} · ซื้อ ${form.purchaseQuantity || 0} ${form.purchaseUnit} = เพิ่ม ${formCalculatedStock ?? 0} ${purchasePackaging.baseUnit}`, "Package conversion and calculated stock are applied automatically")}</p>}<div className="form-label">{ui("วันที่ซื้อ", "Purchase date")}<DatePicker value={form.paidDate} onChange={(value) => setForm({ ...form, paidDate: value })} placeholder={ui("เลือกวันที่ซื้อ", "Choose purchase date")}/></div>{purchaseTargetEntry?.stock && <label className="form-label">{ui(`จำนวนที่เพิ่มเข้า (${purchaseTargetEntry.stock.unit})`, `Quantity added (${purchaseTargetEntry.stock.unit})`)}<input className="calculated-stock-input" type="number" min="0" step="any" placeholder="0" readOnly={formCalculatedStock !== null} value={formCalculatedStock !== null ? String(formCalculatedStock) : form.stockAddedQuantity} onChange={(event) => setForm({ ...form, stockAddedQuantity: event.target.value })}/>{formCalculatedStock !== null && <small className="calculated-stock-note">{ui("อ่านอย่างเดียว · คำนวณจากขนาดบรรจุ × จำนวนที่ซื้อ", "Read only · package size × purchase quantity")}</small>}</label>}</>}
+        {modal === "purchase" && <><label className="form-label">{ui("รายการ", "Item")}<input value={form.name} readOnly/></label><div className="form-label">{ui("ซื้อจากร้าน *", "Store *")}<CategorySelect value={form.store} memoryGroup="stores" options={[...new Set(entries.flatMap((entry) => [entry.store ?? "", ...(entry.purchases ?? []).map((purchase) => purchase.store)]).filter(Boolean))]} allowCreate language={language} placeholder={ui("ค้นหาหรือเพิ่มร้าน", "Search or add a store")} onChange={(value) => { setForm({ ...form, store: value }); setPurchaseStoreError(false); }}/>{purchaseStoreError && <span className="form-field-error" role="alert">{ui("กรุณาเลือกหรือเพิ่มร้านก่อนบันทึก", "Choose or add a store before saving")}</span>}</div><label className="form-label">{ui("ราคาต่อหน่วย (บาท)", "Unit price (THB)")}<input type="number" min="0" step="0.01" required value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })}/></label><div className="purchase-total-preview"><span>{ui("รายจ่ายรวม", "Total expense")}</span><strong>฿{currency(formPurchaseTotal)}</strong><small>{form.purchaseQuantity || "0"} × ฿{currency(Number(form.price) || 0)}</small></div><div className="form-row"><label className="form-label">{ui("จำนวนที่ซื้อ", "Quantity purchased")}<input type="number" min={shoppingTargetId ? "0.01" : "1"} step={shoppingTargetId ? "any" : "1"} required value={form.purchaseQuantity} onChange={(event) => setForm({ ...form, purchaseQuantity: event.target.value })}/></label><div className="form-label">{ui("หน่วยที่ซื้อ", "Purchase unit")}<CategorySelect value={form.purchaseUnit} memoryGroup="units" options={purchaseUnitOptions} allowCreate language={language} onChange={(value) => setForm({ ...form, purchaseUnit: value })}/></div></div>{purchasePackaging && <p className="purchase-unit-note">{ui(`ข้อมูลบรรจุ: 1 ${purchasePackaging.innerUnit} = ${purchasePackaging.unitsPerInner} ${purchasePackaging.baseUnit}${purchasePackaging.outerUnit ? ` · 1 ${purchasePackaging.outerUnit} = ${(purchasePackaging.innersPerOuter ?? 1) * purchasePackaging.unitsPerInner} ${purchasePackaging.baseUnit}` : ""} · ซื้อ ${form.purchaseQuantity || 0} ${form.purchaseUnit} = เพิ่ม ${formCalculatedStock ?? 0} ${purchasePackaging.baseUnit}`, "Package conversion and calculated stock are applied automatically")}</p>}<div className="form-label">{ui("วันที่ซื้อ", "Purchase date")}<DatePicker value={form.paidDate} onChange={(value) => setForm({ ...form, paidDate: value })} placeholder={ui("เลือกวันที่ซื้อ", "Choose purchase date")}/></div>{purchaseTargetEntry?.stock && <label className="form-label">{ui(`จำนวนที่เพิ่มเข้า (${purchaseTargetEntry.stock.unit})`, `Quantity added (${purchaseTargetEntry.stock.unit})`)}<input className="calculated-stock-input" type="number" min="0" step="any" placeholder="0" readOnly={formCalculatedStock !== null} value={formCalculatedStock !== null ? String(formCalculatedStock) : form.stockAddedQuantity} onChange={(event) => setForm({ ...form, stockAddedQuantity: event.target.value })}/>{formCalculatedStock !== null && <small className="calculated-stock-note">{ui("อ่านอย่างเดียว · คำนวณจากขนาดบรรจุ × จำนวนที่ซื้อ", "Read only · package size × purchase quantity")}</small>}</label>}</>}
         {modal === "category" ? <label className="form-label">{ui("ชื่อหมวดหมู่", "Category name")}
           <input autoFocus required placeholder={ui("เช่น ของใช้สัตว์เลี้ยง", "e.g. Pet supplies")} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}/>
         </label> : modal !== "purchase" && <section className="record-form-section">
@@ -1339,7 +1296,7 @@ export default function Home() {
             <input autoFocus={modal !== "renew"} required readOnly={modal === "renew"} placeholder={recordPlaceholder} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}/>
           </label>
           {productForm && <div className="form-label">{ui("สำหรับใคร", "For whom")} <span className="optional">{ui("ไม่บังคับ", "Optional")}</span>
-            <CategorySelect value={form.forPerson} options={["ตัวเอง", "แม่", "พ่อ", "ลูก", "ส่วนกลาง"]} allowCreate language={language}
+            <CategorySelect value={form.forPerson} memoryGroup="people" options={["ตัวเอง", "แม่", "พ่อ", "ลูก", "ส่วนกลาง"]} allowCreate language={language}
               placeholder={ui("เลือกหรือพิมพ์ชื่อ", "Choose or enter a name")} onChange={(value) => setForm({ ...form, forPerson: value })}/>
           </div>}
         </section>}
@@ -1365,12 +1322,12 @@ export default function Home() {
           <label className="form-label">{ui("ใช้สำหรับ / แก้อะไร", "Purpose / condition")} <span className="optional">{ui("ไม่บังคับ", "Optional")}</span><input placeholder={ui("เช่น ลดไข้ แก้แพ้ หรือบำรุงประสาท", "e.g. fever, allergy, nerve support")} value={form.medPurpose} onChange={(event) => setForm({ ...form, medPurpose: event.target.value })}/></label>
           <fieldset className="meal-picker"><legend>รับประทานช่วงไหน</legend><div className="meal-options">{["เช้า", "กลางวัน", "เย็น", "ก่อนนอน"].map((meal) => <label key={meal} className={`meal-option ${form.medMeals.includes(meal) ? "selected" : ""}`}><input type="checkbox" checked={form.medMeals.includes(meal)} onChange={() => setForm((current) => ({ ...current, medMeals: current.medMeals.includes(meal) ? current.medMeals.filter((item) => item !== meal) : [...current.medMeals, meal], medReminders: current.medReminders.filter((item) => item.meal !== meal) }))}/><span>{meal}</span></label>)}</div></fieldset>
           <div className="form-row"><label className="form-label">สัมพันธ์กับอาหาร<select value={form.medFoodTiming} onChange={(event) => setForm({ ...form, medFoodTiming: event.target.value })}><option value="">ไม่ระบุ</option><option>ก่อนอาหาร</option><option>หลังอาหาร</option><option>พร้อมอาหาร</option><option>ไม่เกี่ยวกับอาหาร</option></select></label><label className="form-label">รับประทานทุก ๆ <span className="optional">ไม่บังคับ</span><div className="input-with-unit"><input type="number" min="1" placeholder="เช่น 8" value={form.medFrequencyHours} onChange={(event) => setForm({ ...form, medFrequencyHours: event.target.value })}/><span>ชั่วโมง</span></div></label></div>
-          <div className="form-row"><label className="form-label">ครั้งละเท่าไร<input type="number" min="0" step="any" placeholder="เช่น 1" value={form.medDose} onChange={(event) => setForm({ ...form, medDose: event.target.value })}/></label><div className="form-label">หน่วย<CategorySelect value={form.medDoseUnit} options={["เม็ด", "แคปซูล", "ช้อนชา", "ช้อนโต๊ะ", "มิลลิลิตร", "หยด", "ซอง", "ครั้ง", "อื่น ๆ"]} allowCreate placeholder="ค้นหาหรือเพิ่มหน่วย" onChange={(value) => setForm({ ...form, medDoseUnit: value })}/></div></div>
+          <div className="form-row"><label className="form-label">ครั้งละเท่าไร<input type="number" min="0" step="any" placeholder="เช่น 1" value={form.medDose} onChange={(event) => setForm({ ...form, medDose: event.target.value })}/></label><div className="form-label">หน่วย<CategorySelect value={form.medDoseUnit} memoryGroup="units" options={["เม็ด", "แคปซูล", "ช้อนชา", "ช้อนโต๊ะ", "มิลลิลิตร", "หยด", "ซอง", "ครั้ง", "อื่น ๆ"]} allowCreate placeholder="ค้นหาหรือเพิ่มหน่วย" onChange={(value) => setForm({ ...form, medDoseUnit: value })}/></div></div>
           <label className="form-label">รายละเอียดเพิ่มเติม <span className="optional">ไม่บังคับ</span><textarea rows={2} placeholder="เช่น ดื่มน้ำตาม 1 แก้ว หรือคำแนะนำจากฉลากยา" value={form.medDetails} onChange={(event) => setForm({ ...form, medDetails: event.target.value })}/></label>
         </section>}
         {medicineForm && <section className="record-form-section">
           <RecordFormHeading icon="package" title={ui("บรรจุภัณฑ์และรูปยา", "Packaging and photos")}/>
-          <section className="packaging-form-section"><div className="medicine-form-heading"><span className="medicine-form-icon"><Icon name="package" size={16}/></span><div><strong>{ui("รูปแบบบรรจุ", "Package conversion")}</strong><small>{ui("ใช้คำนวณจำนวนคงเหลืออัตโนมัติเมื่อบันทึกการซื้อ", "Used to calculate stock automatically when recording a purchase")}</small></div></div><div className="packaging-equation"><div className="form-label">{ui("หน่วยย่อย", "Base unit")}<CategorySelect value={form.packageBaseUnit} options={["เม็ด", "แคปซูล", "ซอง", "มล.", "กรัม"]} allowCreate onChange={(value) => setForm({ ...form, packageBaseUnit: value, stockUnit: value })}/></div><div className="packaging-pair"><label className="form-label">{ui(`จำนวน${form.packageBaseUnit || "หน่วย"}ต่อ${form.packageInnerUnit || "บรรจุภัณฑ์"}`, "Base units per inner package")}<input type="number" min="1" step="1" value={form.packageUnitsPerInner} onChange={(event) => setForm({ ...form, packageUnitsPerInner: event.target.value })}/></label><div className="form-label">{ui("หน่วยบรรจุชั้นที่ 1", "Inner package")}<CategorySelect value={form.packageInnerUnit} options={["แผง", "ขวด", "ซอง", "หลอด"]} allowCreate onChange={(value) => setForm({ ...form, packageInnerUnit: value })}/></div></div><div className="packaging-pair"><label className="form-label">{ui(`จำนวน${form.packageInnerUnit || "หน่วย"}ต่อ${form.packageOuterUnit || "บรรจุภัณฑ์"}`, "Inner packages per outer package")}<input type="number" min="1" step="1" value={form.packageInnersPerOuter} onChange={(event) => setForm({ ...form, packageInnersPerOuter: event.target.value })}/></label><div className="form-label">{ui("หน่วยบรรจุชั้นที่ 2", "Outer package")}<CategorySelect value={form.packageOuterUnit} options={["กล่อง", "แพ็ก", "ชุด"]} allowCreate onChange={(value) => setForm({ ...form, packageOuterUnit: value })}/></div></div></div><p>{ui(`ตัวอย่าง: 1 ${form.packageInnerUnit || "แผง"} = ${form.packageUnitsPerInner || 0} ${form.packageBaseUnit || "เม็ด"} · 1 ${form.packageOuterUnit || "กล่อง"} = ${(Number(form.packageUnitsPerInner) || 0) * (Number(form.packageInnersPerOuter) || 0)} ${form.packageBaseUnit || "เม็ด"}`, `Example: 1 ${form.packageInnerUnit} = ${form.packageUnitsPerInner} ${form.packageBaseUnit}`)}</p></section>
+          <section className="packaging-form-section"><div className="medicine-form-heading"><span className="medicine-form-icon"><Icon name="package" size={16}/></span><div><strong>{ui("รูปแบบบรรจุ", "Package conversion")}</strong><small>{ui("ใช้คำนวณจำนวนคงเหลืออัตโนมัติเมื่อบันทึกการซื้อ", "Used to calculate stock automatically when recording a purchase")}</small></div></div><div className="packaging-equation"><div className="form-label">{ui("หน่วยย่อย", "Base unit")}<CategorySelect value={form.packageBaseUnit} memoryGroup="units" options={["เม็ด", "แคปซูล", "ซอง", "มล.", "กรัม"]} allowCreate onChange={(value) => setForm({ ...form, packageBaseUnit: value, stockUnit: value })}/></div><div className="packaging-pair"><label className="form-label">{ui(`จำนวน${form.packageBaseUnit || "หน่วย"}ต่อ${form.packageInnerUnit || "บรรจุภัณฑ์"}`, "Base units per inner package")}<input type="number" min="1" step="1" value={form.packageUnitsPerInner} onChange={(event) => setForm({ ...form, packageUnitsPerInner: event.target.value })}/></label><div className="form-label">{ui("หน่วยบรรจุชั้นที่ 1", "Inner package")}<CategorySelect value={form.packageInnerUnit} memoryGroup="units" options={["แผง", "ขวด", "ซอง", "หลอด"]} allowCreate onChange={(value) => setForm({ ...form, packageInnerUnit: value })}/></div></div><div className="packaging-pair"><label className="form-label">{ui(`จำนวน${form.packageInnerUnit || "หน่วย"}ต่อ${form.packageOuterUnit || "บรรจุภัณฑ์"}`, "Inner packages per outer package")}<input type="number" min="1" step="1" value={form.packageInnersPerOuter} onChange={(event) => setForm({ ...form, packageInnersPerOuter: event.target.value })}/></label><div className="form-label">{ui("หน่วยบรรจุชั้นที่ 2", "Outer package")}<CategorySelect value={form.packageOuterUnit} memoryGroup="units" options={["กล่อง", "แพ็ก", "ชุด"]} allowCreate onChange={(value) => setForm({ ...form, packageOuterUnit: value })}/></div></div></div><p>{ui(`ตัวอย่าง: 1 ${form.packageInnerUnit || "แผง"} = ${form.packageUnitsPerInner || 0} ${form.packageBaseUnit || "เม็ด"} · 1 ${form.packageOuterUnit || "กล่อง"} = ${(Number(form.packageUnitsPerInner) || 0) * (Number(form.packageInnersPerOuter) || 0)} ${form.packageBaseUnit || "เม็ด"}`, `Example: 1 ${form.packageInnerUnit} = ${form.packageUnitsPerInner} ${form.packageBaseUnit}`)}</p></section>
           <div className="medicine-photo-field"><span className="medicine-photo-label">รูปถ่ายยา <small>เพิ่มได้สูงสุด 3 รูป · รูปละไม่เกิน 1 MB</small></span><div className="medicine-photo-grid">{form.photos.map((photo, index) => <div className="medicine-photo-preview" key={photo}><img src={photo} alt={`รูปยาที่แนบ ${index + 1}`}/><button type="button" className="medicine-photo-remove" aria-label={`ลบรูปที่ ${index + 1}`} onClick={() => setPhotoDeleteTarget({ kind: "form", index })}><Icon name="trash" size={14}/></button></div>)}{form.photos.length < 3 && <><label className="medicine-photo-button"><Icon name="camera" size={18}/><span><strong>ถ่ายรูป</strong><small>เปิดกล้องหลัง</small></span><input type="file" accept="image/*" capture="environment" onChange={async (event) => { const input = event.currentTarget; const file = input.files?.[0]; if (!file) return; try { const photo = await compressPhoto(file); setForm((current) => current.photos.length < 3 ? { ...current, photos: [...current.photos, photo] } : current); } catch { setNotice("รูปต้องย่อให้เหลือไม่เกิน 1 MB"); } finally { input.value = ""; } }}/></label><label className="medicine-photo-button"><Icon name="package" size={18}/><span><strong>เลือกรูป</strong><small>เลือกได้หลายรูป</small></span><input type="file" accept="image/*" multiple onChange={async (event) => { const input = event.currentTarget; const files = Array.from(input.files ?? []).slice(0, 3); if (!files.length) return; try { const photos = await Promise.all(files.map((file) => compressPhoto(file))); setForm((current) => ({ ...current, photos: [...current.photos, ...photos].slice(0, 3) })); if (files.length > 3) setNotice("เลือกได้สูงสุด 3 รูป"); } catch { setNotice("มีรูปที่ย่อให้เหลือไม่เกิน 1 MB ไม่สำเร็จ"); } finally { input.value = ""; } }}/></label></>}</div></div>
         </section>}
         {medicineForm && form.medMeals.length > 0 && <section className="record-form-section medicine-reminder-group">
@@ -1380,7 +1337,7 @@ export default function Home() {
         {productForm && <section className="record-form-section stock-form-section">
           <RecordFormHeading icon="package" title={ui("จำนวนคงเหลือ", "Stock on hand")}/>
           <label className="stock-toggle"><input type="checkbox" checked={form.trackStock} onChange={(event) => setForm({ ...form, trackStock: event.target.checked })}/><span className="stock-toggle-mark"><Icon name="check" size={13}/></span><span><strong>คำนวณจำนวนวันที่ใช้ได้ถึง</strong><small>คำนวณจากจำนวนคงเหลือ ÷ จำนวนที่ใช้ต่อวัน</small></span></label>
-          {form.trackStock && <div className="stock-fields"><div className="form-row"><label className="form-label">จำนวนที่มีอยู่<input type="number" min="0" step="any" placeholder="เช่น 30" value={form.stockQuantity} onChange={(event) => setForm({ ...form, stockQuantity: event.target.value })}/></label><div className="form-label">หน่วย<CategorySelect value={form.stockUnit} options={["เม็ด", "แคปซูล", "ชิ้น", "ขวด", "กล่อง", "ซอง", "มล.", "กรัม", "ครั้ง"]} allowCreate placeholder="ค้นหาหรือเพิ่มหน่วย" onChange={(value) => setForm({ ...form, stockUnit: value })}/></div></div><div className="form-row"><label className="form-label">ใช้เฉลี่ยต่อวัน<input type="number" min="0.01" step="any" placeholder="เช่น 2" value={form.stockDailyUse} onChange={(event) => setForm({ ...form, stockDailyUse: event.target.value })}/></label><label className="form-label">แจ้งเตือนก่อนหมด (วัน)<input type="number" min="0" max="365" step="1" value={form.alertDays} onChange={(event) => setForm({ ...form, alertDays: event.target.value })}/></label></div><p className="stock-preview">{formStockDays !== null && formStockDate ? <><strong>{stockRunoutLabel(formStockDays, language, formStockDate)}</strong> · {language === "en" ? "Alert" : "แจ้งเตือนก่อนหมด"} {form.alertDays || 0} {language === "en" ? "days early" : "วัน"}</> : (language === "en" ? "Enter quantity and daily use to calculate the estimated date." : "ระบุจำนวนที่มีและจำนวนที่ใช้ต่อวันเพื่อคำนวณวันหมด")}</p></div>}
+          {form.trackStock && <div className="stock-fields"><div className="form-row"><label className="form-label">จำนวนที่มีอยู่<input type="number" min="0" step="any" placeholder="เช่น 30" value={form.stockQuantity} onChange={(event) => setForm({ ...form, stockQuantity: event.target.value })}/></label><div className="form-label">หน่วย<CategorySelect value={form.stockUnit} memoryGroup="units" options={["เม็ด", "แคปซูล", "ชิ้น", "ขวด", "กล่อง", "ซอง", "มล.", "กรัม", "ครั้ง"]} allowCreate placeholder="ค้นหาหรือเพิ่มหน่วย" onChange={(value) => setForm({ ...form, stockUnit: value })}/></div></div><div className="form-row"><label className="form-label">ใช้เฉลี่ยต่อวัน<input type="number" min="0.01" step="any" placeholder="เช่น 2" value={form.stockDailyUse} onChange={(event) => setForm({ ...form, stockDailyUse: event.target.value })}/></label><label className="form-label">แจ้งเตือนก่อนหมด (วัน)<input type="number" min="0" max="365" step="1" value={form.alertDays} onChange={(event) => setForm({ ...form, alertDays: event.target.value })}/></label></div><p className="stock-preview">{formStockDays !== null && formStockDate ? <><strong>{stockRunoutLabel(formStockDays, language, formStockDate)}</strong> · {language === "en" ? "Alert" : "แจ้งเตือนก่อนหมด"} {form.alertDays || 0} {language === "en" ? "days early" : "วัน"}</> : (language === "en" ? "Enter quantity and daily use to calculate the estimated date." : "ระบุจำนวนที่มีและจำนวนที่ใช้ต่อวันเพื่อคำนวณวันหมด")}</p></div>}
           {form.trackStock && <label className="stock-toggle auto-use-toggle"><input type="checkbox" checked={form.stockAutoDeduct} onChange={(event) => setForm({ ...form, stockAutoDeduct: event.target.checked })}/><span className="stock-toggle-mark"><Icon name="check" size={13}/></span><span><strong>{ui("หักจำนวนอัตโนมัติ", "Deduct automatically")}</strong><small>{ui("หักตามจำนวนที่ใช้เฉลี่ยทุกวัน หากปิดให้กดบันทึกการใช้เอง", "Deduct the daily use each day. Turn off to record use manually.")}</small></span></label>}
         </section>}
         {recordKind === "service" && <section className="record-form-section">
@@ -1388,7 +1345,7 @@ export default function Home() {
           <label className="form-label">{modal === "edit" ? ui("ยอดที่จ่ายสะสม (บาท)", "Total paid (THB)") : ui("ยอดที่จ่ายรอบนี้ (บาท)", "Paid this round (THB)")}
             <input type="number" min="0" step="0.01" placeholder="0.00" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })}/>
           </label>
-          <div className="form-row"><label className="form-label">{modal === "renew" ? ui("จำนวนที่ซื้อรอบนี้", "Purchased this round") : ui("สิทธิ์ทั้งหมดในรอบนี้", "Total allowance this round")}<input type="number" min="1" required placeholder="10" value={form.total} onChange={(event) => setForm({ ...form, total: event.target.value })}/></label><div className="form-label">{ui("หน่วย", "Unit")}{modal === "renew" ? <input value={form.unit} readOnly/> : <CategorySelect value={form.unit} options={["ครั้ง", "ชั่วโมง", "เครื่อง", "ใบ"]} allowCreate placeholder="ค้นหาหรือเพิ่มหน่วย" onChange={(value) => setForm({ ...form, unit: value })}/>}</div></div>
+          <div className="form-row"><label className="form-label">{modal === "renew" ? ui("จำนวนที่ซื้อรอบนี้", "Purchased this round") : ui("สิทธิ์ทั้งหมดในรอบนี้", "Total allowance this round")}<input type="number" min="1" required placeholder="10" value={form.total} onChange={(event) => setForm({ ...form, total: event.target.value })}/></label><div className="form-label">{ui("หน่วย", "Unit")}{modal === "renew" ? <input value={form.unit} readOnly/> : <CategorySelect value={form.unit} memoryGroup="units" options={["ครั้ง", "ชั่วโมง", "เครื่อง", "ใบ"]} allowCreate placeholder="ค้นหาหรือเพิ่มหน่วย" onChange={(value) => setForm({ ...form, unit: value })}/>}</div></div>
           <div className="form-row"><div className="form-label">วันที่จ่าย<DatePicker value={form.paidDate} onChange={(value) => setForm({ ...form, paidDate: value })} placeholder="เลือกวันที่จ่าย"/></div><div className="form-label">วันที่เริ่มต้น<DatePicker value={form.startDate} onChange={(value) => setForm({ ...form, startDate: value })} placeholder="เลือกวันเริ่มต้น"/></div></div>
           {modal === "renew" && <div className="service-round-preview">
             <span>{ui("ยกมาจากรอบก่อน", "Carried over")} <strong>{currency(carryPreview)} {form.unit}</strong></span>
@@ -1406,7 +1363,7 @@ export default function Home() {
     {deleteOccurrenceTarget && <ConfirmationPopup labelledBy="delete-occurrence-title" onCancel={() => setDeleteOccurrenceTarget(null)}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-occurrence-title"><span className="confirm-icon"><Icon name="trash" size={22}/></span><h2 id="delete-occurrence-title">{ui("ลบนัดหมายที่ทำซ้ำ?", "Delete recurring appointment?")}</h2><p><strong>“{deleteOccurrenceTarget.entry.name}”</strong> · {dateLabel(deleteOccurrenceTarget.date, language)}</p><div className="confirm-actions"><button type="button" className="secondary-button" onClick={() => setDeleteOccurrenceTarget(null)}>{ui("ยกเลิก", "Cancel")}</button><button type="button" className="danger-button" onClick={confirmRemoveOccurrence}>{ui("ลบเฉพาะครั้งนี้", "This occurrence")}</button><button type="button" className="danger-button" onClick={() => { const entry = deleteOccurrenceTarget.entry; setDeleteOccurrenceTarget(null); removeEntry(entry); }}>{ui("ลบทั้งชุด", "Entire series")}</button></div></section></ConfirmationPopup>}
     {deletePastAppointmentsOpen && <ConfirmationPopup labelledBy="delete-past-title" onCancel={() => setDeletePastAppointmentsOpen(false)}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-past-title" aria-describedby="delete-past-description"><span className="confirm-icon"><Icon name="trash" size={22}/></span><h2 id="delete-past-title">{ui("ลบนัดหมายที่ผ่านไปแล้ว?", "Delete past appointments?")}</h2><p id="delete-past-description">{ui(`จะลบนัดหมายที่ผ่านไปแล้ว ${pastAppointmentCount} รายการ การลบนี้ไม่สามารถย้อนกลับได้`, `This will delete ${pastAppointmentCount} past appointments. This cannot be undone.`)}</p><div className="confirm-actions"><button type="button" className="secondary-button" onClick={() => setDeletePastAppointmentsOpen(false)}>{ui("ยกเลิก", "Cancel")}</button><button type="button" className="danger-button" disabled={pastAppointmentCount === 0} onClick={confirmRemovePastAppointments}><Icon name="trash" size={16}/>{ui("ลบทั้งหมด", "Delete all")}</button></div></section></ConfirmationPopup>}
     {photoDeleteTarget && <ConfirmationPopup labelledBy="photo-delete-title" onCancel={() => setPhotoDeleteTarget(null)}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="photo-delete-title" aria-describedby="photo-delete-description"><span className="confirm-icon"><Icon name="trash" size={22}/></span><h2 id="photo-delete-title">{photoDeleteTarget.kind === "attachment" ? ui("ลบไฟล์แนบนี้?", "Delete this attachment?") : ui("ลบรูปภาพนี้?", "Delete this photo?")}</h2><p id="photo-delete-description">{ui("ไฟล์ที่ลบจากรายการจะถูกลบจากที่เก็บออนไลน์หลังบันทึกข้อมูล", "The file will also be removed from online storage after the record is saved.")}</p><div className="confirm-actions"><button type="button" className="secondary-button" onClick={() => setPhotoDeleteTarget(null)}>{ui("ยกเลิก", "Cancel")}</button><button type="button" className="danger-button" onClick={confirmPhotoRemove}><Icon name="trash" size={16}/>{ui("ลบไฟล์", "Delete file")}</button></div></section></ConfirmationPopup>}
-  </main>;
+  </main></DropdownOptionsProvider>;
 }
 
 function CalendarPage({ entries, language, householdId, focusDate, editTarget, openRequest, onEditDone, onSave, onUpdate, onDelete, onDeletePast, onOpenEntry }: {
@@ -1636,17 +1593,26 @@ function CalendarDetail({ entry, entries, language, occurrenceDate, onOpenEntry,
   </section>;
 }
 
-function CategorySelect({ value, options, language = "th", placeholder, allowCreate = false, onChange }: { value: string; options: string[]; language?: Language; placeholder?: string; allowCreate?: boolean; onChange: (value: string) => void }) {
+function CategorySelect({ value, options, language = "th", placeholder, allowCreate = false, memoryGroup, onChange }: { value: string; options: string[]; language?: Language; placeholder?: string; allowCreate?: boolean; memoryGroup?: DropdownGroup; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const remembered = useDropdownOptions(memoryGroup);
+  const allOptions = uniqueOptions([...options, ...remembered.options, ...(allowCreate ? [value] : [])]);
   const rootRef = useRef<HTMLDivElement>(null);
-  const normalizedQuery = query.trim().normalize("NFKC").toLocaleLowerCase();
+  const normalizedQuery = optionKey(query);
+  const existingOption = allOptions.find((option) => optionKey(option) === normalizedQuery);
+  const choose = (candidate: string) => {
+    const next = allOptions.find((option) => optionKey(option) === optionKey(candidate)) ?? optionLabel(candidate);
+    if (!next) return;
+    if (allowCreate) remembered.remember(next);
+    onChange(next); setOpen(false); setQuery("");
+  };
   const words = normalizedQuery.split(/\s+/).filter(Boolean);
-  const filteredOptions = options.filter((option) => {
-    const name = option.normalize("NFKC").toLocaleLowerCase();
+  const filteredOptions = allOptions.filter((option) => {
+    const name = optionKey(option);
     return words.every((word) => name.includes(word));
   }).sort((a, b) => {
-    const score = (name: string) => name.toLocaleLowerCase().startsWith(normalizedQuery) ? 0 : name.toLocaleLowerCase().includes(normalizedQuery) ? 1 : 2;
+    const score = (name: string) => optionKey(name).startsWith(normalizedQuery) ? 0 : optionKey(name).includes(normalizedQuery) ? 1 : 2;
     return score(a) - score(b) || a.localeCompare(b, language === "th" ? "th" : "en");
   });
 
@@ -1671,11 +1637,11 @@ function CategorySelect({ value, options, language = "th", placeholder, allowCre
       <span>{value ? categoryLabel(value, language) : placeholder ?? (language === "en" ? "Select category" : "เลือกหมวดหมู่")}</span><Icon name="chevron" size={16}/>
     </button>
     {open && <div className="category-select-menu">
-      <label className="category-select-search"><Icon name="search" size={16}/><input autoFocus type="search" placeholder={placeholder ?? (language === "en" ? "Search categories..." : "ค้นหาหมวดหมู่...")} value={query} onChange={(event) => setQuery(event.target.value)}/></label>
+      <label className="category-select-search"><Icon name="search" size={16}/><input autoFocus type="search" placeholder={placeholder ?? (language === "en" ? "Search categories..." : "ค้นหาหมวดหมู่...")} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); event.stopPropagation(); if (!event.nativeEvent.isComposing && query.trim() && (allowCreate || existingOption)) choose(existingOption ?? query); } }}/></label>
       <div className="category-select-options" role="listbox" aria-label={language === "en" ? "Select category" : "เลือกหมวดหมู่"}>
-        {filteredOptions.map((option) => <button type="button" role="option" aria-selected={value === option} className={`category-select-option ${value === option ? "selected" : ""}`} key={option} onClick={() => { onChange(option); setOpen(false); setQuery(""); }}><span>{categoryLabel(option, language)}</span>{value === option && <Icon name="check" size={16}/>}</button>)}
-        {!filteredOptions.length && !query.trim() && <p className="category-select-empty">{language === "en" ? "No matching options" : "ไม่พบรายการ"}</p>}
-        {allowCreate && query.trim() && !options.some((option) => option.toLocaleLowerCase("th") === query.trim().toLocaleLowerCase("th")) && <button type="button" className="category-select-option category-select-create" onClick={() => { onChange(query.trim()); setOpen(false); setQuery(""); }}><span>＋ {language === "en" ? `Add “${query.trim()}”` : `เพิ่ม “${query.trim()}”`}</span></button>}
+        {filteredOptions.map((option) => <button type="button" role="option" aria-selected={optionKey(value) === optionKey(option)} className={`category-select-option ${optionKey(value) === optionKey(option) ? "selected" : ""}`} key={optionKey(option)} onClick={() => choose(option)}><span>{categoryLabel(option, language)}</span>{optionKey(value) === optionKey(option) && <Icon name="check" size={16}/>}</button>)}
+        {!filteredOptions.length && (!allowCreate || !query.trim()) && <p className="category-select-empty">{language === "en" ? "No matching options" : "ไม่พบรายการ"}</p>}
+        {allowCreate && query.trim() && !existingOption && <button type="button" className="category-select-option category-select-create" onClick={() => choose(query)}><span>＋ {language === "en" ? `Add “${optionLabel(query)}”` : `เพิ่ม “${optionLabel(query)}”`}</span></button>}
       </div>
     </div>}
   </div>;
