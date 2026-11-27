@@ -1,37 +1,20 @@
 "use client";
 import PasswordInput from "./PasswordInput";
 import ConfirmationPopup from "./ConfirmationPopup";
-import { pinError } from "@/lib/pin-errors";
+import PinSettings from "./PinSettings";
+import { useToast } from "./ToastProvider";
+import { compressPhoto } from "@/lib/image-upload";
 import HouseholdUsage from "./HouseholdUsage";
 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { cloud, hasDevicePin, listHouseholdPeople, manageHouseholdPerson, replaceProfilePhoto, setDevicePin, verifyDevicePin, type Household, type HouseholdPerson } from "@/lib/cloud";
+import { cloud, listHouseholdPeople, manageHouseholdPerson, replaceProfilePhoto, type Household, type HouseholdPerson } from "@/lib/cloud";
 import UsagePage from "./UsagePage";
 
 type Section = "menu" | "account" | "home" | "pin" | "display" | "usage";
 
 async function prepareProfilePhoto(file: File): Promise<Blob> {
-  if (!file.type.startsWith("image/")) throw new Error("Please choose a photo");
-  const url = URL.createObjectURL(file);
-  try {
-    const image = new Image();
-    image.src = url;
-    await image.decode();
-    const side = Math.min(image.naturalWidth, image.naturalHeight);
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 512;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Could not process the photo");
-    context.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, 0, 0, 512, 512);
-    for (const quality of [0.86, 0.7, 0.5]) {
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
-      if (blob && blob.size <= 1024 * 1024) return blob;
-    }
-    throw new Error("Photo is too large after resizing");
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  return (await fetch(await compressPhoto(file, 1024 * 1024, { maxWidth: 512, aspect: 1 }))).blob();
 }
 
 export default function SettingsPage({ houses, activeId, defaultHouseholdId, inviteCode, busy, error, language, userId, userEmail, isAdmin, profilePhotoUrl, userDisplayName, onDisplayNameChange, displaySettings, notificationPreferences, onNotificationPreferenceChange, onPhotoChanged, onMediaPickerStart, onMediaPickerEnd, onOpenAdmin, onOpenHistory, onSwitch, onMakeDefault, onRename, onInvite, onJoin, onSignOut }: {
@@ -64,6 +47,7 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
   onSignOut: () => void;
 }) {
   const en = language === "en";
+  const notify = useToast();
   const [section, setSection] = useState<Section>("menu");
   const [code, setCode] = useState("");
   const [profileName, setProfileName] = useState(userDisplayName);
@@ -81,22 +65,11 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
   const [photoMessage, setPhotoMessage] = useState("");
   const galleryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
-  const [pinExists, setPinExists] = useState<boolean | null>(null);
-  const [pinEnabled, setPinEnabled] = useState(false);
-  const [accountPassword, setAccountPassword] = useState("");
-  const [currentPin, setCurrentPin] = useState("");
-  const [newPin, setNewPin] = useState("");
-  const [confirmPin, setConfirmPin] = useState("");
-  const [pinBusy, setPinBusy] = useState(false);
-  const [pinMessage, setPinMessage] = useState("");
-  const [pinLoadError, setPinLoadError] = useState("");
-  const [pinRevision, setPinRevision] = useState(0);
   const [people, setPeople] = useState<HouseholdPerson[]>([]);
   const [peopleBusy, setPeopleBusy] = useState(false);
   const [peopleError, setPeopleError] = useState("");
   const [peopleRevision, setPeopleRevision] = useState(0);
   const [pendingMemberAction, setPendingMemberAction] = useState<{ person: HouseholdPerson; role: "admin" | "member" | "remove" } | null>(null);
-  const pinKey = `baanjai-pin-device-${userId}`;
   const active = houses.find((house) => house.id === activeId);
   const canInvite = active?.role === "owner" || active?.role === "admin";
 
@@ -122,26 +95,13 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
       await manageHouseholdPerson(activeId, pendingMemberAction.person.user_id, pendingMemberAction.role);
       setPeopleRevision((revision) => revision + 1);
       setPeopleError("");
+      notify(en ? "Member updated" : "บันทึกข้อมูลสมาชิกแล้ว", "success");
     } catch (cause) { setPeopleError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setPendingMemberAction(null); setPeopleBusy(false); }
   };
 
 
-  useEffect(() => {
-    let mounted = true;
-    void (async () => {
-      setPinExists(null);
-      setPinLoadError("");
-      try {
-        const enabled = localStorage.getItem(pinKey) === "enabled";
-        const exists = await hasDevicePin();
-        if (mounted) { setPinExists(exists); setPinEnabled(exists && enabled); }
-      } catch (cause) {
-        if (mounted) setPinLoadError(pinError(cause, language));
-      }
-    })();
-    return () => { mounted = false; };
-  }, [pinKey, pinRevision, language]);
+
 
   useEffect(() => {
     const clear = () => onMediaPickerEnd();
@@ -161,6 +121,7 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
       const url = await replaceProfilePhoto(userId, blob);
       onPhotoChanged(url);
       setPhotoMessage(en ? "Profile photo updated." : "เปลี่ยนรูปโปรไฟล์แล้ว");
+      notify(en ? "Profile photo updated" : "เปลี่ยนรูปโปรไฟล์แล้ว", "success");
     } catch (cause) {
       setPhotoMessage(cause instanceof Error ? cause.message : (en ? "Could not update photo." : "เปลี่ยนรูปไม่สำเร็จ"));
     } finally { setPhotoBusy(false); }
@@ -174,53 +135,7 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
     const { error: authError } = await cloud.auth.updateUser({ password: newPassword });
     setPasswordBusy(false);
     setPasswordMessage(authError ? authError.message : (en ? "Password saved." : "บันทึกรหัสผ่านแล้ว"));
-    if (!authError) { setNewPassword(""); setConfirmPassword(""); }
-  };
-
-  const savePin = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (pinBusy || pinExists === null) return;
-    if (!/^[0-9]{6}$/.test(newPin)) { setPinMessage(en ? "PIN must contain six digits." : "PIN ต้องเป็นตัวเลข 6 หลัก"); return; }
-    if (newPin !== confirmPin) { setPinMessage(en ? "PINs do not match." : "รหัส 6 หลักทั้งสองช่องไม่ตรงกัน"); return; }
-    setPinBusy(true); setPinMessage("");
-    try {
-      if (!cloud) throw new Error(en ? "Please sign in to set a PIN." : "กรุณาเข้าสู่ระบบก่อนตั้ง PIN");
-      if (!pinExists) {
-        const { data: userData, error: userError } = await cloud.auth.getUser();
-        if (userError || !userData.user?.email) throw userError ?? new Error(en ? "Account email is unavailable." : "ไม่พบอีเมลของบัญชี");
-        const { error: signInError } = await cloud.auth.signInWithPassword({ email: userData.user.email, password: accountPassword });
-        if (signInError) throw new Error(en ? "Enter your account password to set a PIN." : "กรุณาใส่รหัสผ่านบัญชีให้ถูกต้องก่อนตั้ง PIN");
-      }
-      const changed = await setDevicePin(newPin, pinExists ? currentPin : undefined);
-      if (!changed) throw new Error(en ? "This PIN cannot be used. Check your old PIN or choose another code." : "ใช้รหัสนี้ไม่ได้ ตรวจรหัสเดิมหรือเลือกรหัสใหม่ที่ไม่ซ้ำกับบัญชีอื่น");
-      setPinExists(true);
-      if (!pinExists) { localStorage.setItem(pinKey, "enabled"); setPinEnabled(true); }
-      setCurrentPin(""); setNewPin(""); setConfirmPin(""); setAccountPassword("");
-      setPinMessage(en ? "PIN saved." : "บันทึก PIN แล้ว");
-    } catch (cause) { setPinMessage(pinError(cause, language)); }
-    finally { setPinBusy(false); }
-  };
-
-  const togglePin = async () => {
-    if (pinBusy || pinExists === null) return;
-    if (pinEnabled) {
-      try {
-        localStorage.removeItem(pinKey);
-        setPinEnabled(false);
-        setPinMessage(en ? "PIN at app opening is off on this device." : "ปิดการถาม PIN ตอนเปิดแอปบนเครื่องนี้แล้ว");
-      } catch (cause) { setPinMessage(pinError(cause, language)); }
-      return;
-    }
-    if (!pinExists) { setPinMessage(en ? "Set a PIN below first." : "ตั้ง PIN ด้านล่างก่อน"); return; }
-    if (currentPin.length !== 6) { setPinMessage(en ? "Enter your current six-digit PIN to turn it on." : "ใส่ PIN เดิม 6 หลักเพื่อเปิดใช้งาน"); return; }
-    setPinBusy(true); setPinMessage("");
-    try {
-      if (!await verifyDevicePin(currentPin)) throw new Error(en ? "Incorrect PIN or temporarily locked." : "PIN ไม่ถูกต้องหรือถูกพักการลองชั่วคราว");
-      localStorage.setItem(pinKey, "enabled");
-      setPinEnabled(true);
-      setPinMessage(en ? "PIN at app opening is on." : "เปิดการถาม PIN ตอนเปิดแอปแล้ว");
-    } catch (cause) { setPinMessage(pinError(cause, language)); }
-    finally { setCurrentPin(""); setPinBusy(false); }
+    if (!authError) { setNewPassword(""); setConfirmPassword(""); notify(en ? "Password saved" : "บันทึกรหัสผ่านแล้ว", "success"); }
   };
 
   const title = section === "account" ? (en ? "Account" : "บัญชีของฉัน") : section === "home" ? (en ? "Family home" : "บ้านและครอบครัว") : section === "pin" ? (en ? "App PIN" : "PIN เข้าแอป") : section === "display" ? (en ? "Display" : "การแสดงผล") : section === "usage" ? (en ? "System usage" : "การใช้งานระบบ") : (en ? "Settings" : "ตั้งค่า");
@@ -239,7 +154,7 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
     </div>}
     {section === "account" && <div className="settings-sections">
       <section className="settings-card"><h2>{en ? "Account email" : "อีเมลบัญชี"}</h2><p>{en ? "The email currently used to sign in." : "อีเมลที่ใช้เข้าสู่ระบบในปัจจุบัน"}</p><input className="settings-account-email" type="email" value={userEmail} readOnly aria-label={en ? "Account email" : "อีเมลบัญชี"}/></section>
-      <section className="settings-card"><h2>{en ? "Display name" : "ชื่อที่แสดง"}</h2><p>{en ? "Shown in your greeting and family profile." : "แสดงบนหน้าแรกและข้อมูลสมาชิกในบ้าน"}</p><form className="household-join-form" onSubmit={(event) => { event.preventDefault(); setProfileNameBusy(true); void onDisplayNameChange(profileName.trim()).then((saved) => setProfileNameMessage(saved ? (en ? "Name saved" : "บันทึกชื่อแล้ว") : (en ? "Could not save name" : "บันทึกชื่อไม่สำเร็จ"))).finally(() => setProfileNameBusy(false)); }}><input value={profileName} onChange={(event) => setProfileName(event.target.value)} maxLength={60} required/><button type="submit" className="primary-button" disabled={profileNameBusy || !profileName.trim()}>{en ? "Save" : "บันทึก"}</button></form>{profileNameMessage && <p role="status">{profileNameMessage}</p>}</section>
+      <section className="settings-card"><h2>{en ? "Display name" : "ชื่อที่แสดง"}</h2><p>{en ? "Shown in your greeting and family profile." : "แสดงบนหน้าแรกและข้อมูลสมาชิกในบ้าน"}</p><form className="household-join-form" onSubmit={(event) => { event.preventDefault(); setProfileNameBusy(true); void onDisplayNameChange(profileName.trim()).then((saved) => { setProfileNameMessage(saved ? (en ? "Name saved" : "บันทึกชื่อแล้ว") : (en ? "Could not save name" : "บันทึกชื่อไม่สำเร็จ")); if (saved) notify(en ? "Name saved" : "บันทึกชื่อแล้ว", "success"); }).finally(() => setProfileNameBusy(false)); }}><input value={profileName} onChange={(event) => setProfileName(event.target.value)} maxLength={60} required/><button type="submit" className="primary-button" disabled={profileNameBusy || !profileName.trim()}>{en ? "Save" : "บันทึก"}</button></form>{profileNameMessage && <p role="status">{profileNameMessage}</p>}</section>
       <section className="settings-card"><h2>{en ? "Profile photo" : "รูปโปรไฟล์"}</h2><div className="settings-profile-photo"><span className="settings-avatar">{profilePhotoUrl ? <img src={profilePhotoUrl} alt={en ? "Profile" : "รูปโปรไฟล์"}/> : "ค"}</span><div><strong>{en ? "Your photo" : "รูปของคุณ"}</strong><p>{en ? "Photos are cropped and reduced to under 1 MB." : "รูปจะถูกตัดและย่อให้น้อยกว่า 1 MB"}</p></div></div><div className="settings-button-row"><button type="button" className="secondary-button" disabled={photoBusy} onClick={() => { onMediaPickerStart(); galleryRef.current?.click(); }}>{en ? "Choose photo" : "เลือกรูป"}</button><button type="button" className="secondary-button" disabled={photoBusy} onClick={() => { onMediaPickerStart(); cameraRef.current?.click(); }}>{en ? "Take photo" : "ถ่ายรูป"}</button></div><input ref={galleryRef} className="visually-hidden" type="file" accept="image/*" onChange={(event) => void photoChanged(event)}/><input ref={cameraRef} className="visually-hidden" type="file" accept="image/*" capture="user" onChange={(event) => void photoChanged(event)}/>{photoMessage && <p role="status">{photoMessage}</p>}</section>
       <section className="settings-card"><h2>{en ? "Set or change password" : "ตั้งหรือเปลี่ยนรหัสผ่าน"}</h2><p>{en ? "Use this password to sign in with email." : "ใช้รหัสผ่านนี้เพื่อเข้าสู่ระบบด้วยอีเมล"}</p><form className="household-password-form" onSubmit={(event) => void changePassword(event)}><PasswordInput language={language} minLength={8} required autoComplete="new-password" placeholder={en ? "New password (8+ characters)" : "รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)"} value={newPassword} onChange={(event) => setNewPassword(event.target.value)}/><PasswordInput language={language} minLength={8} required autoComplete="new-password" placeholder={en ? "Confirm password" : "ยืนยันรหัสผ่าน"} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)}/><button type="submit" className="primary-button" disabled={passwordBusy}>{en ? "Save password" : "บันทึกรหัสผ่าน"}</button></form>{passwordMessage && <p role="status">{passwordMessage}</p>}</section>
     </div>}
@@ -268,7 +183,7 @@ export default function SettingsPage({ houses, activeId, defaultHouseholdId, inv
       {canInvite && <section className="settings-card"><h2>{en ? "Invite family" : "เชิญเข้าร่วมบ้าน"}</h2><p>{en ? "The single-use code expires in 7 days." : "รหัสใช้ได้ครั้งเดียวและหมดอายุใน 7 วัน"}</p><button type="button" className="primary-button" disabled={busy} onClick={onInvite}>{en ? "Create invite code" : "สร้างรหัสเชิญ"}</button>{inviteCode && <div className="household-invite-code"><code>{inviteCode}</code><button type="button" onClick={() => void navigator.clipboard.writeText(inviteCode).then(() => setCopied(true))}>{copied ? (en ? "Copied" : "คัดลอกแล้ว") : (en ? "Copy" : "คัดลอก")}</button></div>}</section>}
       <section className="settings-card"><h2>{en ? "Join a home" : "เข้าร่วมบ้าน"}</h2><p>{en ? "Enter an invite code shared by the home owner." : "กรอกรหัสเชิญที่เจ้าของบ้านส่งให้"}</p><form className="household-join-form" onSubmit={(event) => { event.preventDefault(); onJoin(code); }}><input required value={code} onChange={(event) => setCode(event.target.value)} placeholder={en ? "Invite code" : "รหัสเชิญ"} autoCapitalize="none" autoComplete="off"/><button type="submit" className="primary-button" disabled={busy || !code.trim()}>{busy ? (en ? "Please wait..." : "กรุณารอสักครู่...") : (en ? "Join" : "เข้าร่วม")}</button></form></section>
     </div>}
-    {section === "pin" && <div className="settings-sections"><section className="settings-card"><h2>{en ? "Ask for PIN when opening the app" : "ถาม PIN เมื่อเปิดแอป"}</h2><p>{en ? "This applies to this signed-in device. Email sign-in remains available." : "ใช้กับเครื่องนี้ที่เข้าสู่ระบบแล้ว ยังเข้าใช้ด้วยอีเมลได้ตามปกติ"}</p><div className="settings-toggle-row"><span>{pinEnabled ? (en ? "On" : "เปิดอยู่") : (en ? "Off" : "ปิดอยู่")}</span><button type="button" className={`settings-switch ${pinEnabled ? "on" : ""}`} role="switch" aria-checked={pinEnabled} aria-label={en ? "Ask for PIN when opening the app" : "ถาม PIN เมื่อเปิดแอป"} disabled={pinBusy || pinExists === null} onClick={() => void togglePin()}><i/></button></div>{pinExists && !pinEnabled && <PasswordInput language={language} className="settings-pin-input" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="off" placeholder={en ? "Current PIN to turn on" : "PIN เดิมเพื่อเปิดใช้งาน"} value={currentPin} onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/>}</section><section className="settings-card"><h2>{pinExists ? (en ? "Change six-digit PIN" : "เปลี่ยน PIN 6 หลัก") : (en ? "Set six-digit PIN" : "ตั้ง PIN 6 หลัก")}</h2><p>{en ? "Choose a code that has not been used by another account." : "เลือกรหัสที่ไม่ซ้ำกับบัญชีอื่น"}</p>{pinExists === null ? (pinLoadError ? <div><p role="alert">{pinLoadError}</p><button type="button" className="secondary-button" onClick={() => setPinRevision((value) => value + 1)}>{en ? "Try again" : "ลองอีกครั้ง"}</button></div> : <p role="status">{en ? "Loading..." : "กำลังโหลด..."}</p>) : <form className="household-password-form" onSubmit={(event) => void savePin(event)}>{!pinExists && <PasswordInput language={language} minLength={8} required autoComplete="current-password" placeholder={en ? "Account password" : "รหัสผ่านบัญชี"} value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)}/>} {pinExists && <PasswordInput language={language} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "Current PIN" : "PIN เดิม"} value={currentPin} onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/>}<PasswordInput language={language} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "New six-digit PIN" : "PIN ใหม่ 6 หลัก"} value={newPin} onChange={(event) => setNewPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/><PasswordInput language={language} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required autoComplete="off" placeholder={en ? "Confirm new PIN" : "ยืนยัน PIN ใหม่"} value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))}/><button type="submit" className="primary-button" disabled={pinBusy}>{pinExists ? (en ? "Change PIN" : "เปลี่ยน PIN") : (en ? "Set PIN" : "ตั้ง PIN")}</button></form>}{pinMessage && <p role="status">{pinMessage}</p>}</section></div>}
+    {section === "pin" && <PinSettings key={userId} userId={userId} language={language}/>}
     {section === "display" && <div className="settings-sections"><section className="settings-card">{displaySettings}</section></div>}
     {section === "usage" && isAdmin && <UsagePage language={language}/>}
     {pendingMemberAction && typeof document !== "undefined" && createPortal(<ConfirmationPopup labelledBy="member-action-title" onCancel={() => { if (!peopleBusy) setPendingMemberAction(null); }}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="member-action-title"><h2 id="member-action-title">{pendingMemberAction.role === "remove" ? (en ? "Remove this member?" : "นำสมาชิกออกจากบ้าน?") : (en ? "Change member role?" : "เปลี่ยนบทบาทสมาชิก?")}</h2><p><strong>{pendingMemberAction.person.display_name || pendingMemberAction.person.email}</strong> · {pendingMemberAction.role === "remove" ? (en ? "They will no longer see this home's data." : "สมาชิกจะเข้าถึงข้อมูลบ้านนี้ไม่ได้อีก") : pendingMemberAction.role === "admin" ? (en ? "Grant home administration access" : "ให้สิทธิ์ผู้ดูแลบ้าน") : (en ? "Set as a regular member" : "เปลี่ยนเป็นสมาชิกทั่วไป")}</p><div className="confirm-actions"><button type="button" className="secondary-button" onClick={() => setPendingMemberAction(null)}>{en ? "Cancel" : "ยกเลิก"}</button><button type="button" className={pendingMemberAction.role === "remove" ? "danger-button" : "primary-button"} disabled={peopleBusy} onClick={() => void confirmMemberAction()}>{en ? "Confirm" : "ยืนยัน"}</button></div></section></ConfirmationPopup>, document.body)}

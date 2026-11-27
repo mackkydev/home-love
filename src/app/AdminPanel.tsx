@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getSignupMethods, getSignupOpen, setSignupMethods, setSignupOpen, type SignupMethods } from "@/lib/cloud";
 import { adminRpc, listAdminHouses, listAdminUsers, type AdminHouse, type AdminUser, type Audit } from "@/lib/admin-api";
 import { MB, mb, usageError } from "@/lib/usage-limits";
+import { useToast } from "./ToastProvider";
 
 function SignupSettings({ language }: { language: "th" | "en" }) {
   const [open, setOpen] = useState<boolean | null>(null);
@@ -11,6 +12,7 @@ function SignupSettings({ language }: { language: "th" | "en" }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const en = language === "en";
+  const notify = useToast();
 
   useEffect(() => {
     let active = true;
@@ -27,7 +29,7 @@ function SignupSettings({ language }: { language: "th" | "en" }) {
     if (open === null || busy) return;
     setBusy(true);
     setError("");
-    try { setOpen(await setSignupOpen(!open)); }
+    try { setOpen(await setSignupOpen(!open)); notify(en ? "Registration settings saved" : "บันทึกการตั้งค่าสมัครสมาชิกแล้ว", "success"); }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(false); }
   };
@@ -36,7 +38,7 @@ function SignupSettings({ language }: { language: "th" | "en" }) {
     if (busy || methods === null || methods === next) return;
     setBusy(true);
     setError("");
-    try { setMethods(await setSignupMethods(next)); }
+    try { setMethods(await setSignupMethods(next)); notify(en ? "Registration settings saved" : "บันทึกวิธีสมัครสมาชิกแล้ว", "success"); }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(false); }
   };
@@ -124,6 +126,7 @@ function HouseEditor({ house, busy, onSave, onMember, onCleanup }: {
 }
 
 export default function AdminPanel({ language, onClose }: { language: "th" | "en"; onClose: () => void }) {
+ const notify = useToast();
  const [tab,setTab]=useState<"users"|"houses"|"signup"|"audit">("users");
  const [search,setSearch]=useState(""); const [query,setQuery]=useState(""); const [page,setPage]=useState(0);
  const [users,setUsers]=useState<AdminUser[]>([]); const [houses,setHouses]=useState<AdminHouse[]>([]); const [audit,setAudit]=useState<Audit[]>([]);
@@ -147,7 +150,7 @@ export default function AdminPanel({ language, onClose }: { language: "th" | "en
  },[tab,query,page,filterUser?.id,revision]);
  const mutate=async(task:()=>Promise<unknown>)=>{
   setBusy(true);setError("");setNotice("");
-  try{await task();setNotice("บันทึกเรียบร้อย");reload();}catch(e){setError(usageError(e));}finally{setBusy(false);}
+  try{await task();setNotice("บันทึกเรียบร้อย");notify(language === "en" ? "Changes saved" : "บันทึกเรียบร้อย", "success");reload();}catch(e){setError(usageError(e));}finally{setBusy(false);}
  };
  const switchTab=(next:typeof tab)=>{setTab(next);setSearch("");setQuery("");setPage(0);setFilterUser(null);setSelectedUser(null);setSelectedHouse(null);setError("");setNotice("");setLoading(next!=="signup");};
  const userHomes=()=>{setFilterUser(selectedUser);setTab("houses");setQuery("");setSearch("");setPage(0);setSelectedHouse(null);setLoading(true);};

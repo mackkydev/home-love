@@ -166,7 +166,7 @@ export default function TravelPage({ entries, language, today, selection, onSele
 
   return <section className="feature-page travel-page">
     <header className="feature-heading">
-      <div><h1>{ui("วางแผนเดินทาง", "Travel planner")}</h1>{!trip && <p>{ui("จัดแผนรายวันและดูเวลาเดินทางในปฏิทินของบ้าน", "Plan each day and see your itinerary on the household calendar.")}</p>}</div>
+      <div><h1>{ui("แผนเดินทาง", "Travel planner")}</h1>{!trip && <p>{ui("จัดแผนรายวันและดูเวลาเดินทางในปฏิทินของบ้าน", "Plan each day and see your itinerary on the household calendar.")}</p>}</div>
       {trip ? <button type="button" className="secondary-button" onClick={() => navigate(null)}><Icon name="luggage" size={16}/>{ui("ดูทุกการเดินทาง", "All trips")}</button>
         : <button type="button" className="primary-button" onClick={addTrip}><Icon name="plus" size={16}/>{ui("สร้างแผนเดินทาง", "Plan a trip")}</button>}
     </header>

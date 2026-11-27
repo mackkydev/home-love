@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { encodeJpeg } from "@/lib/image-upload";
 
 type Language = "th" | "en";
 type Position = { x: number; y: number };
@@ -39,24 +40,10 @@ function PhotoCropDialog({ source, aspect, maxWidth, maxBytes, language, onSave,
       const cropHeight = size.height / imageHeight;
       const cropX = (size.width - cropWidth) * position.x;
       const cropY = (size.height - cropHeight) * position.y;
-      const canvas = document.createElement("canvas");
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("Canvas unavailable");
-      let width = Math.min(maxWidth, cropWidth);
-      for (let attempt = 0; attempt < 8; attempt += 1) {
-        canvas.width = Math.max(1, Math.round(width));
-        canvas.height = Math.max(1, Math.round(width / aspect));
-        context.fillStyle = "#fff";
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        context.drawImage(image.current, cropX, cropY, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
-        const photo = canvas.toDataURL("image/jpeg", Math.max(0.48, 0.9 - attempt * 0.06));
-        if (photo.startsWith("data:image/jpeg;base64,") && photo.length * 0.75 <= maxBytes) {
-          dialog.current?.close();
-          onSave(photo);
-          return;
-        }
-        width *= 0.78;
-      }
+      const photo = encodeJpeg(image.current, { x: cropX, y: cropY, width: cropWidth, height: cropHeight }, maxWidth, maxBytes);
+      dialog.current?.close();
+      onSave(photo);
+      return;
     } catch {
       // Keep the crop open so the user can cancel or try a different position.
     }
@@ -128,7 +115,7 @@ export default function PhotoCropField({ value, onChange, label, hint, language,
       }}/></label>
       {value && <button type="button" className="secondary-button" onClick={() => onChange(undefined)}>{en ? "Remove photo" : "เอารูปออก"}</button>}
     </div>
-    {hint && <small>{hint}</small>}
+    <small>{hint ?? (en ? "Photos are resized automatically before uploading." : "ระบบย่อขนาดรูปให้อัตโนมัติก่อนอัปโหลด")}</small>
     {source && createPortal(<PhotoCropDialog source={source} language={language} aspect={aspect} maxWidth={maxWidth} maxBytes={maxBytes}
       onClose={() => setSource(null)} onSave={(photo) => { onChange(photo); setSource(null); }}/>, document.body)}
   </div>;

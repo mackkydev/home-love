@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore }
 import { createVault, maxVaultFileBytes, maxVaultLogoBytes, readVaultFile, sealVault, unlockVault, type VaultRecord } from "@/lib/password-vault";
 import { externalWebUrl } from "@/lib/web-url";
 import Icon from "./Icon";
+import { useToast } from "./ToastProvider";
 import ConfirmDialog from "./ConfirmDialog";
 import { passwordClipboard, type ClipboardState } from "@/lib/password-clipboard";
 import PhotoCropField from "./PhotoCropField";
@@ -60,6 +61,7 @@ function PasswordField({ label, value, onChange, autoComplete, maxLength, showCo
 
 export default function PasswordVault({ scope, language }: { scope: string; language: "th" | "en" }) {
   const ui = (th: string, en: string) => language === "en" ? en : th;
+  const notify = useToast();
   const storageKey = `home-love-private-vault-v1:${scope}`;
   const [saved, setSaved] = useState<string | null>();
   const [session, setSession] = useState<Session | null>(null);
@@ -197,6 +199,7 @@ export default function PasswordVault({ scope, language }: { scope: string; lang
     try {
       if (!await persist(await sealVault(records, session), current) || revision.current !== current) return;
       setSession({ ...session, records });
+      notify(ui("บันทึกคลังรหัสผ่านแล้ว", "Vault saved"), "success");
       setDraft(null);
       setRevealed(null);
       setRemoveId(null);

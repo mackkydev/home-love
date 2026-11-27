@@ -1,11 +1,25 @@
-export default function StartupSplash({ language = "th" }: { language?: "th" | "en" }) {
+"use client";
+
+import { useEffect, useState } from "react";
+
+export default function StartupSplash({ language = "th", durationMs = 3000 }: { language?: "th" | "en"; durationMs?: number }) {
   const en = language === "en";
+  const [progress, setProgress] = useState(0);
+  useEffect(() => {
+    const start = Date.now();
+    const timer = setInterval(() => {
+      const next = Math.min(100, (Date.now() - start) / durationMs * 100);
+      setProgress(next);
+      if (next >= 100) clearInterval(timer);
+    }, 50);
+    return () => clearInterval(timer);
+  }, [durationMs]);
   return <main className="startup-splash" role="status" aria-busy="true" aria-live="polite">
     <div className="startup-splash-copy">
       <span className="startup-splash-eyebrow">HOME LOVE</span>
       <h1>{en ? "Welcome home" : "ยินดีต้อนรับสู่บ้านของเรา"}</h1>
       <p>{en ? "Everything your family needs, in one place" : "จัดการเรื่องสำคัญของครอบครัวในที่เดียว"}</p>
-      <span className="startup-progress" aria-hidden="true"><i/></span>
+      <span className="startup-progress" role="progressbar" aria-label={en ? "Preparing the app" : "กำลังเตรียมแอป"} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><i style={{ width: `${progress}%` }}/></span>
       <small>{en ? "Preparing your home…" : "กำลังเตรียมบ้านของคุณ…"}</small>
     </div>
   </main>;

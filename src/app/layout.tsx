@@ -1,7 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "./refinements.css";
+import "./interactions.css";
 import AccountAccessGate from "./AccountAccessGate";
+import AppStartupGate from "./AppStartupGate";
+import ToastProvider from "./ToastProvider";
 
 export const metadata: Metadata = {
   title: "บ้านของเรา | จัดการเรื่องในบ้าน",
@@ -29,7 +32,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         if (accent === 'custom' && /^#[0-9a-f]{6}$/i.test(custom || '')) root.style.setProperty('--blue', custom);
       } catch (_) {}` }} /></head>
       <body>
-        <AccountAccessGate>{children}</AccountAccessGate>
+        <ToastProvider><AppStartupGate><AccountAccessGate>{children}</AccountAccessGate></AppStartupGate></ToastProvider>
         <div className="portrait-only-overlay" role="status" aria-live="polite">
           <div className="portrait-only-card">
             <span className="portrait-only-icon" aria-hidden="true">↻</span>

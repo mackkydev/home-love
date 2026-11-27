@@ -10,6 +10,9 @@ import PinLock from "./PinLock";
 import TravelPage from "./TravelPage";
 import PasswordVault from "./PasswordVault";
 import Icon from "./Icon";
+import MoreMenuDrawer from "./MoreMenuDrawer";
+import { useToast } from "./ToastProvider";
+import { compressPhoto } from "@/lib/image-upload";
 import PurchaseEditor from "./PurchaseEditor";
 import ConfirmationPopup from "./ConfirmationPopup";
 import StartupSplash from "./StartupSplash";
@@ -259,24 +262,6 @@ function medicineFromForm(form: { medMeals: string[]; medFoodTiming: string; med
   return { meals: form.medMeals, foodTiming: form.medFoodTiming, frequencyHours: form.medFrequencyHours, dose: form.medDose, doseUnit: form.medDoseUnit, details: form.medDetails.trim(), purpose: form.medPurpose.trim() || undefined, reminders: form.medReminders };
 }
 function vapidBytes(value: string) { const base64 = value.replace(/-/g, "+").replace(/_/g, "/"); const raw = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")); return Uint8Array.from(raw, (char) => char.charCodeAt(0)); }
-async function compressPhoto(file: File, maxBytes = 1024 * 1024) {
-  const image = await createImageBitmap(file);
-  let scale = Math.min(1, 1280 / Math.max(image.width, image.height));
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  if (!context) { image.close(); throw new Error("ไม่สามารถอ่านรูปภาพได้"); }
-  let output = "";
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    canvas.width = Math.max(1, Math.round(image.width * scale)); canvas.height = Math.max(1, Math.round(image.height * scale));
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    output = canvas.toDataURL("image/jpeg", Math.max(0.48, 0.76 - attempt * 0.06));
-    if (output.startsWith("data:image/jpeg;base64,") && output.length * 0.75 <= maxBytes) break;
-    scale *= 0.78;
-  }
-  image.close();
-  if (!output.startsWith("data:image/jpeg;base64,") || output.length * 0.75 > maxBytes) throw new Error("ย่อรูปให้อยู่ในขนาดที่กำหนดไม่สำเร็จ");
-  return output;
-}
 async function documentAttachment(file: File): Promise<Attachment> {
   if (file.type.startsWith("image/")) return { name: file.name || "photo.jpg", data: await compressPhoto(file), type: "image/jpeg" };
   if (file.size > 1024 * 1024) throw new Error("ไฟล์ใหญ่เกิน 1 MB");
@@ -354,7 +339,7 @@ export default function Home() {
   const [category, setCategory] = useState("ทั้งหมด");
   const [endingSoon, setEndingSoon] = useState(false);
   const [personFilter, setPersonFilter] = useState<string | null>(null);
-  const [notice, setNotice] = useState("");
+  const setNotice = useToast();
   const [form, setForm] = useState({ name: "", category: "ของใช้ในบ้าน", transaction: "expense" as "income" | "expense", price: "", purchaseQuantity: "1", purchaseUnit: "ชิ้น", stockAddedQuantity: "", total: "", unit: "ครั้ง", note: "", store: "", forPerson: "", paidDate: "", startDate: "", medMeals: [] as string[], medFoodTiming: "", medFrequencyHours: "", medDose: "", medDoseUnit: "เม็ด", medDetails: "", medPurpose: "", packageBaseUnit: "เม็ด", packageInnerUnit: "แผง", packageUnitsPerInner: "10", packageOuterUnit: "กล่อง", packageInnersPerOuter: "6", medReminders: [] as NonNullable<MedicineInstructions["reminders"]>, useReminders: false, photos: [] as string[], attachments: [] as Attachment[], trackStock: false, stockQuantity: "", stockDailyUse: "", stockUnit: "เม็ด", stockAutoDeduct: false, alertDays: "3", serviceAutoDeduct: false, serviceAutoAmount: "1", serviceAutoEveryDays: "1" });
   const [purchaseEditTarget, setPurchaseEditTarget] = useState<{ entryId: string; purchaseId: string } | null>(null);
   const [purchaseStoreError, setPurchaseStoreError] = useState(false);
@@ -441,7 +426,7 @@ export default function Home() {
     const orientation = screen.orientation as ScreenOrientation & { lock?: (value: string) => Promise<void> };
     if (installed && typeof orientation?.lock === "function") void orientation.lock("portrait-primary").catch(() => undefined);
   }, []);
-  useEffect(() => { if (!ready || cloudEnabled) return; try { localStorage.setItem("baanjai-entries-v1", JSON.stringify(entries)); } catch { setNotice("พื้นที่บันทึกรูปเต็ม กรุณาสำรองข้อมูลหรือลบรูปเก่าก่อน"); } }, [entries, ready]);
+  useEffect(() => { if (!ready || cloudEnabled) return; try { localStorage.setItem("baanjai-entries-v1", JSON.stringify(entries)); } catch { setNotice("พื้นที่บันทึกรูปเต็ม กรุณาสำรองข้อมูลหรือลบรูปเก่าก่อน"); } }, [entries, ready, setNotice]);
   useEffect(() => { if (ready && !cloudEnabled) localStorage.setItem("baanjai-categories-v1", JSON.stringify(extraCategories)); }, [extraCategories, ready]);
   const loadHouseholdData = useCallback(async (requestedId?: string, userId = loadedUser.current) => {
     if (!userId) return;
@@ -507,7 +492,7 @@ export default function Home() {
     } finally {
       remoteRefreshRunningRef.current = false;
     }
-  }, [language]);
+  }, [language, setNotice]);
   useEffect(() => {
     if (!cloud) return;
     let active = true;
@@ -655,7 +640,6 @@ export default function Home() {
       void client.removeChannel(channel);
     };
   }, [cloudReady, householdId, refreshCurrentHousehold]);
-  useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(""), 2600); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => { setNotificationNow(Date.now()); const timer = setInterval(() => setNotificationNow(Date.now()), 60_000); return () => clearInterval(timer); }, []);
   useEffect(() => {
     if (!householdId || !cloudReady) { setHouseholdPeople([]); return; }
@@ -825,7 +809,7 @@ export default function Home() {
       setPurchaseEditTarget(null); setNotice(ui("ไม่พบประวัติการซื้อนี้ กรุณาเปิดรายการใหม่", "Purchase no longer exists. Reopen the record.")); return;
     }
     setEntries((previous) => updatePurchaseDetails(previous, entryId, purchaseId, store, price));
-    setPurchaseEditTarget(null); setNotice(ui("แก้ไขประวัติการซื้อแล้ว", "Purchase updated"));
+    setPurchaseEditTarget(null); setNotice(ui("แก้ไขประวัติการซื้อแล้ว", "Purchase updated"), "success");
   };
   const buyAgain = (entry: Entry) => {
     setPurchaseStoreError(false);
@@ -872,7 +856,7 @@ export default function Home() {
         const newItem: Entry = { id: crypto.randomUUID(), name: shopping.name, category: shopping.shopping?.targetCategory ?? "ของใช้ในบ้าน", kind: "item", transaction: "expense", date: purchase.date, actor: "คุณ", store: purchase.store, price: purchase.price, note: shopping.note, purchases: [purchase] };
         return [newItem, ...completed];
       });
-      setModal(null); setEditingEntry(null); setShoppingTargetId(""); setNotice(ui("บันทึกการซื้อแล้ว", "Purchase saved")); return;
+      setModal(null); setEditingEntry(null); setShoppingTargetId(""); setNotice(ui("บันทึกการซื้อแล้ว", "Purchase saved"), "success"); return;
     }
     if (modal === "edit") {
       if (!editingEntry) return;
@@ -899,7 +883,7 @@ export default function Home() {
         updated.date = updated.startDate;
       }
       setEntries((prev) => prev.map((entry) => entry.id === editingEntry.id ? updated : entry));
-      setModal(null); setEditingEntry(null); setNotice("แก้ไขรายการแล้ว"); return;
+      setModal(null); setEditingEntry(null); setNotice("แก้ไขรายการแล้ว", "success"); return;
     }
     if (modal === "renew") {
       if (editingEntry?.kind !== "service") return;
@@ -927,7 +911,7 @@ export default function Home() {
       if (isMedicineEntry(form.category, form.name) && Number(form.packageUnitsPerInner) > 0) newEntry.packaging = { baseUnit: form.packageBaseUnit.trim() || "เม็ด", innerUnit: form.packageInnerUnit.trim() || "แผง", unitsPerInner: Number(form.packageUnitsPerInner), outerUnit: form.packageOuterUnit.trim() || undefined, innersPerOuter: Number(form.packageInnersPerOuter) > 0 ? Number(form.packageInnersPerOuter) : undefined };
     }
     if (entryKind === "service") { const quantity = Number(form.total) || 1; const amount = Number(form.price) || 0; const payment: Payment = { paidAt: form.paidDate || today(), startAt: form.startDate || today(), amount, quantity }; newEntry.total = quantity; newEntry.remaining = quantity; newEntry.unit = form.unit || "ครั้ง"; newEntry.paidDate = payment.paidAt; newEntry.startDate = payment.startAt; newEntry.payments = [{ ...payment, carriedQuantity: 0 }]; newEntry.events = []; if (form.serviceAutoDeduct) newEntry.serviceAuto = { amount: Number(form.serviceAutoAmount), everyDays: Number(form.serviceAutoEveryDays), anchorDate: payment.startAt, baseRemaining: quantity }; }
-    setEntries((prev) => [newEntry, ...prev]); setModal(null); openCategory(newEntry.category); setNotice("เพิ่มรายการเรียบร้อยแล้ว");
+    setEntries((prev) => [newEntry, ...prev]); setModal(null); openCategory(newEntry.category); setNotice("เพิ่มรายการเรียบร้อยแล้ว", "success");
   };
   const removeEntry = (entry: Entry) => setDeleteTarget(entry);
   const removeCalendarOccurrence = (entry: Entry, date: string) => {
@@ -1053,7 +1037,7 @@ export default function Home() {
   const createInvite = async () => {
     setHouseholdBusy(true);
     setHouseholdError("");
-    try { setInviteCode(await createHouseholdInvite(householdId)); }
+    try { setInviteCode(await createHouseholdInvite(householdId)); setNotice(ui("สร้างรหัสเชิญแล้ว", "Invite code created"), "success"); }
     catch (error) { setHouseholdError(error instanceof Error ? error.message : "สร้างรหัสเชิญไม่สำเร็จ"); }
     finally { setHouseholdBusy(false); }
   };
@@ -1137,12 +1121,13 @@ export default function Home() {
     const { error } = await cloud.auth.updateUser({ data: { notification_preferences: next } });
     if (error) { setNotice(ui("บันทึกการตั้งค่าแจ้งเตือนไม่สำเร็จ", "Could not save notification settings")); return; }
     setNotificationPreferences(next);
+    setNotice(ui("บันทึกการตั้งค่าแล้ว", "Settings saved"), "success");
   };
   const navItems: { id: Tab; label: string; icon: string }[] = [
     { id: "home", label: copy.home, icon: "home" },
     { id: "items", label: copy.items, icon: "bag" },
     { id: "services", label: copy.services, icon: "spark" },
-    { id: "travel", label: ui("วางแผนเดินทาง", "Travel planner"), icon: "luggage" },
+    { id: "travel", label: ui("แผนเดินทาง", "Travel planner"), icon: "luggage" },
     { id: "vault", label: ui("คลังรหัสผ่าน", "Password vault"), icon: "lock" },
     { id: "settings", label: ui("ตั้งค่า", "Settings"), icon: "settings" },
   ];
@@ -1186,12 +1171,14 @@ export default function Home() {
   };
   const saveTravelRecord = (record: TravelRecord) => {
     const travel = record.travel;
+    if (travel.kind === "stop" && !isInTrip(record.date, entries.find((entry) => entry.id === travel.tripId && entry.travel?.kind === "trip")?.calendar)) return;
     setEntries((current) => {
       if (travel.kind === "stop" && !isInTrip(record.date, current.find((entry) => entry.id === travel.tripId && entry.travel?.kind === "trip")?.calendar)) return current;
       return current.some((entry) => entry.id === record.id)
         ? current.map((entry) => entry.id === record.id ? record : entry)
         : [record, ...current];
     });
+    setNotice(ui("บันทึกแผนเดินทางแล้ว", "Travel plan saved"), "success");
   };
   const removeTravelRecord = (record: TravelRecord) => {
     setEntries((current) => current.filter((entry) => entry.id !== record.id
@@ -1206,6 +1193,7 @@ export default function Home() {
         : entry)
       : [record, ...current]);
     setPlaceEditor(null);
+    setNotice(ui("บันทึกสถานที่แล้ว", "Place saved"), "success");
   };
   const togglePlaceStar = (id: string) => {
     setEntries((current) => current.map((entry) => entry.id === id && isPlaceRecord(entry)
@@ -1251,7 +1239,7 @@ export default function Home() {
       <span className="nav-caption">{ui("เมนูหลัก", "Main menu")}</span>
       <nav className="side-nav">{navItems.map((item) => <button key={item.id} className={`nav-link ${tab === item.id ? "active" : ""}`} onClick={() => openTab(item.id)}><Icon name={item.icon === "ticket" ? "spark" : item.icon}/><span>{item.label}</span>{item.id === "services" && <small>{activeServiceCount}</small>}</button>)}</nav>
       <span className="nav-caption category-caption">{copy.categories}</span>
-      <nav className="side-nav category-nav">{[...categories.slice(1), ...extraCategories].map((item) => <button key={item.name} className={`nav-link ${category === item.name ? "active" : ""}`} onClick={() => openCategory(category === item.name ? "ทั้งหมด" : item.name)}><span className={`category-dot ${item.color}`}></span><span>{categoryLabel(item.name, language)}</span></button>)}<button className="add-category" onClick={() => { setForm({ ...form, name: "" }); setModal("category"); }}><span>＋</span> {ui("เพิ่มหมวดหมู่", "Add category")}</button></nav>
+      <nav className="side-nav category-nav">{[...categories.slice(1), ...extraCategories].map((item) => <button key={item.name} className={`nav-link ${(item.name === "รายการที่ต้องซื้อ" ? tab === "travel" : category === item.name) ? "active" : ""}`} onClick={() => item.name === "รายการที่ต้องซื้อ" ? openTab("travel") : openCategory(category === item.name ? "ทั้งหมด" : item.name)}><span className={`category-dot ${item.color}`}></span><span>{item.name === "รายการที่ต้องซื้อ" ? ui("แผนเดินทาง", "Travel planner") : categoryLabel(item.name, language)}</span></button>)}<button className="add-category" onClick={() => { setForm({ ...form, name: "" }); setModal("category"); }}><span>＋</span> {ui("เพิ่มหมวดหมู่", "Add category")}</button></nav>
       <div className="sidebar-spacer"/><div className="tip-card"><span className="tip-icon"><Icon name="shield" size={17}/></span><strong>{cloudEnabled ? ui("ข้อมูลบันทึกออนไลน์", "Data saved online") : ui("ข้อมูลอยู่ในเครื่องนี้", "Data stays on this device")}</strong><p>{ui("สำรองข้อมูลเพิ่มเติมไว้ได้ทุกเมื่อ", "You can export an extra backup anytime.")}</p><button onClick={() => void exportData()} disabled={backupBusy}>{backupBusy ? ui("กำลังสำรอง...", "Preparing backup...") : ui("สำรองข้อมูล", "Back up data")} <Icon name="arrow" size={14}/></button></div>
       <button className="profile-row" onClick={() => cloudEnabled && setTab("settings")}><span className="avatar">{profilePhotoUrl ? <img src={profilePhotoUrl} alt=""/> : "ค"}</span><span className="profile-copy"><strong>{ui("คุณ", "You")}</strong><small>{cloudEnabled ? ui("จัดการบัญชีและบ้าน", "Account and household") : ui("สมาชิกครอบครัว", "Family member")}</small></span><Icon name="dots" size={18}/></button>
     </aside>
@@ -1271,7 +1259,7 @@ export default function Home() {
         : tab === "settings" ? <SettingsPage houses={households} activeId={householdId} defaultHouseholdId={defaultHouseholdId} inviteCode={inviteCode} busy={householdBusy} error={householdError} language={language} userId={loadedUser.current} userEmail={userEmail} isAdmin={appAdmin} profilePhotoUrl={profilePhotoUrl} userDisplayName={userDisplayName} onDisplayNameChange={async (name) => { if (!cloud) return false; const { error } = await cloud.auth.updateUser({ data: { full_name: name } }); if (error) return false; setUserDisplayName(name); return true; }} displaySettings={displaySettings} notificationPreferences={notificationPreferences} onNotificationPreferenceChange={(name, enabled) => void changeNotificationPreference(name, enabled)} onPhotoChanged={setProfilePhotoUrl} onMediaPickerStart={() => { mediaPickerOpen.current = true; }} onMediaPickerEnd={() => { mediaPickerOpen.current = false; }} onOpenAdmin={() => setShowAdmin(true)} onOpenHistory={() => { setCategory("ทั้งหมด"); setTab("history"); }} onSwitch={(id) => void switchHousehold(id)} onMakeDefault={(id) => void makeDefaultHousehold(id)} onRename={(id, name) => renameCurrentHousehold(id, name)} onInvite={() => void createInvite()} onJoin={(code) => void joinWithCode(code)} onSignOut={() => void signOut()}/> : <>
         {(tab === "home" || tab === "calendar") && <section className="welcome-row"><div><div className="eyebrow"><span className="greeting-time-icon" aria-hidden="true">{greetingIcon}</span> {headerDate}</div>{tab === "home" ? <div className="welcome-heading-line"><h1>{ui("สวัสดี", "Hello")} {userDisplayName || ui("คุณ", "you")}</h1><p>{copy.intro}</p></div> : <><h1>{ui("บันทึกแจ้งเตือน", "Calendar")}</h1><p>{ui("บันทึกและจัดการแจ้งเตือนในบ้าน", "Manage household reminders")}</p></>}</div><button className="primary-button desktop-add" onClick={openCurrentForm}><span>＋</span> {tab === "calendar" ? ui("เพิ่มการแจ้งเตือน", "Add reminder") : copy.add}</button></section>}
 
-        {tab === "calendar" ? <CalendarPage key={calendarFocusDate ?? "calendar"} focusDate={calendarFocusDate} entries={entries} language={language} householdId={householdId} editTarget={calendarEditTarget} openRequest={calendarAddRequest} onEditDone={() => setCalendarEditId(null)} onSave={(entry) => setEntries((previous) => [entry, ...previous])} onUpdate={(updated) => setEntries((previous) => previous.map((entry) => entry.id === updated.id ? updated : entry))} onDelete={removeCalendarOccurrence} onDeletePast={() => setDeletePastAppointmentsOpen(true)} onOpenEntry={openDetail}/> : tab === "home" ? <>
+        {tab === "calendar" ? <CalendarPage key={calendarFocusDate ?? "calendar"} focusDate={calendarFocusDate} entries={entries} language={language} householdId={householdId} editTarget={calendarEditTarget} openRequest={calendarAddRequest} onEditDone={() => setCalendarEditId(null)} onSave={(entry) => { setEntries((previous) => [entry, ...previous]); setNotice(ui("บันทึกการแจ้งเตือนแล้ว", "Reminder saved"), "success"); }} onUpdate={(updated) => { setEntries((previous) => previous.map((entry) => entry.id === updated.id ? updated : entry)); setNotice(ui("บันทึกการแก้ไขแล้ว", "Changes saved"), "success"); }} onDelete={removeCalendarOccurrence} onDeletePast={() => setDeletePastAppointmentsOpen(true)} onOpenEntry={openDetail}/> : tab === "home" ? <>
           <nav className="feature-shortcuts" aria-label={ui("เครื่องมือในบ้าน", "Household tools")}>
             {navItems.slice(3, 5).map((item) => <button type="button" key={item.id} onClick={() => openTab(item.id)}><span><Icon name={item.icon} size={19}/></span><strong>{item.label}</strong><Icon name="chevron" size={16}/></button>)}
           </nav>
@@ -1282,7 +1270,7 @@ export default function Home() {
               count={stockAlerts.length} moreLabel={ui("ดูของใกล้หมดทั้งหมด", "View low stock")} onMore={() => { openTab("items"); setEndingSoon(true); }}/>
           </div>
 
-          <section className="section-block category-block"><div className="section-heading"><div><h2>{copy.categories}</h2><p>{ui("เลือกดูข้อมูลตามที่ต้องการ", "Choose a category to explore")}</p></div><button className="text-button" onClick={() => openTab("items")}>{copy.viewAll} <Icon name="arrow" size={15}/></button></div><div className="category-cards">{[...categories.slice(1), ...extraCategories].map((item) => { const count = entries.filter((entry) => entry.category === item.name || item.name === "การเงิน" && ["รายรับ", "รายจ่าย", "รายจ่ายในครัวเรือน"].includes(entry.category)).length; return <button className="category-card" key={item.name} onClick={() => openCategory(item.name)}><span className={`category-icon ${item.color}`}><Icon name={item.icon} size={19}/></span><span className="category-info"><strong>{categoryLabel(item.name, language)}</strong><small>{count} {ui("รายการ", "records")}</small></span><Icon name="chevron" size={16}/></button>; })}<button className="category-card add-category-card" onClick={() => { setForm({ ...form, name: "" }); setModal("category"); }}><span className="add-category-icon">＋</span><span className="category-info"><strong>{ui("เพิ่มหมวดหมู่", "Add category")}</strong><small>{ui("สร้างหมวดใหม่", "Create a new category")}</small></span></button></div></section>
+          <section className="section-block category-block"><div className="section-heading"><div><h2>{copy.categories}</h2><p>{ui("เลือกดูข้อมูลตามที่ต้องการ", "Choose a category to explore")}</p></div><button className="text-button" onClick={() => openTab("items")}>{copy.viewAll} <Icon name="arrow" size={15}/></button></div><div className="category-cards">{[...categories.slice(1), ...extraCategories].map((item) => { const travelMenu = item.name === "รายการที่ต้องซื้อ"; const count = travelMenu ? entries.filter((entry) => entry.travel?.kind === "trip").length : entries.filter((entry) => entry.category === item.name || item.name === "การเงิน" && ["รายรับ", "รายจ่าย", "รายจ่ายในครัวเรือน"].includes(entry.category)).length; return <button className="category-card" key={item.name} onClick={() => travelMenu ? openTab("travel") : openCategory(item.name)}><span className={`category-icon ${item.color}`}><Icon name={travelMenu ? "luggage" : item.icon} size={19}/></span><span className="category-info"><strong>{travelMenu ? ui("แผนเดินทาง", "Travel planner") : categoryLabel(item.name, language)}</strong><small>{count} {ui("รายการ", "records")}</small></span><Icon name="chevron" size={16}/></button>; })}<button className="category-card add-category-card" onClick={() => { setForm({ ...form, name: "" }); setModal("category"); }}><span className="add-category-icon">＋</span><span className="category-info"><strong>{ui("เพิ่มหมวดหมู่", "Add category")}</strong><small>{ui("สร้างหมวดใหม่", "Create a new category")}</small></span></button></div></section>
 
           <section className="section-block recent-block"><div className="section-heading"><div><h2>{copy.recent}</h2><p>{ui("บันทึกล่าสุดของสมาชิกในบ้าน", "Latest records from your household")}</p></div><button className="text-button" onClick={() => openTab("history")}>{copy.viewHistory} <Icon name="arrow" size={15}/></button></div><div className="recent-list">{entries.filter((entry) => entry.kind !== "calendar" && entry.kind !== "shopping").slice(0, 4).map((entry) => <button type="button" className="compact-record-row" key={entry.id} onClick={() => openDetail(entry.id)}><span className="compact-record-icon"><Icon name={categories.find((item) => item.name === entry.category)?.icon ?? "package"} size={19}/></span><strong>{entry.name}</strong><Icon name="chevron" size={17}/></button>)}</div></section>
         </> : <>
@@ -1303,12 +1291,8 @@ export default function Home() {
       </div>
       {showInstallBanner && <aside className="pwa-install-tab" aria-label={ui("ติดตั้งแอป", "Install app")}><span className="pwa-install-icon"><Icon name="download" size={23}/></span><span className="pwa-install-copy"><strong>{language === "th" ? "ติดตั้ง (Install)" : "Install"}</strong><small>{installPlatform === "ios" ? ui("เพิ่มไว้บนหน้าจอโฮมของ iPhone หรือ iPad", "Add to your iPhone or iPad Home Screen") : ui("เปิดใช้งานแบบแอปเต็มหน้าจอ", "Use it like a full-screen app")}</small></span><button type="button" className="pwa-install-button" onClick={() => void installPwa()}>{ui("ติดตั้ง", "Install")}</button><button type="button" className="pwa-install-close" aria-label={ui("ซ่อนแถบติดตั้ง", "Hide install prompt")} onClick={dismissInstallBanner}><Icon name="close" size={15}/></button></aside>}
       {showInstallGuide && <div className="modal-backdrop pwa-install-guide-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowInstallGuide(false); }}><section className="pwa-install-guide" role="dialog" aria-modal="true" aria-labelledby="pwa-install-title"><button type="button" className="icon-button pwa-guide-close" aria-label={ui("ปิด", "Close")} onClick={() => setShowInstallGuide(false)}><Icon name="close" size={18}/></button><span className="pwa-guide-icon"><Icon name="download" size={28}/></span><h2 id="pwa-install-title">{installPlatform === "ios" ? ui("ติดตั้งบน iPhone หรือ iPad", "Install on iPhone or iPad") : ui("ติดตั้งบน Android", "Install on Android")}</h2><p>{ui("ติดตั้งแล้วจะเปิดจากหน้าจอโฮม ใช้งานเต็มจอ และให้ความรู้สึกเหมือนแอป", "Open it from your Home Screen in a full-screen app experience.")}</p>{installPlatform === "ios" ? <ol><li>{ui("เปิดหน้านี้ด้วย Safari", "Open this page in Safari.")}</li><li>{ui("แตะปุ่ม แชร์ ที่แถบเครื่องมือ", "Tap the Share button in the toolbar.")}</li><li>{ui("เลือก เพิ่มไปยังหน้าจอโฮม", "Choose Add to Home Screen.")}</li><li>{ui("แตะ เพิ่ม เพื่อยืนยัน", "Tap Add to confirm.")}</li></ol> : <ol><li>{ui("แตะเมนู ⋮ ของเบราว์เซอร์", "Tap the browser menu ⋮.")}</li><li>{ui("เลือก ติดตั้งแอป หรือ เพิ่มไปยังหน้าจอหลัก", "Choose Install app or Add to Home screen.")}</li><li>{ui("แตะ ติดตั้ง เพื่อยืนยัน", "Tap Install to confirm.")}</li></ol>}<button type="button" className="primary-button pwa-guide-done" onClick={() => setShowInstallGuide(false)}>{ui("เข้าใจแล้ว", "Got it")}</button></section></div>}
-      {showMore && <div className="mobile-more-layer">
-        <button type="button" className="mobile-more-backdrop" onClick={() => setShowMore(false)} aria-label={ui("ปิดเมนูเพิ่มเติม", "Close more menu")}/>
-        <nav id="mobile-more-menu" className="mobile-more-menu" aria-label={ui("เมนูเพิ่มเติม", "More menu")}>
-          {[...navItems.slice(3, 5), { id: "calendar" as const, label: ui("ปฏิทิน", "Calendar"), icon: "calendar" }, navItems[5]].map((item) => <button type="button" key={item.id} onClick={() => openTab(item.id)}><Icon name={item.icon} size={20}/>{item.label}</button>)}
-        </nav>
-      </div>}
+      {showMore && <MoreMenuDrawer language={language} activeId={tab} onClose={() => setShowMore(false)} onNavigate={(id) => openTab(id as Tab)}
+        items={[...navItems.slice(3, 5), { id: "calendar", label: ui("ปฏิทิน", "Calendar"), icon: "calendar" }, navItems[5]]}/>}
       <nav className="mobile-nav">
         {navItems.slice(0, 2).map((item) => <button type="button" key={item.id} className={tab === item.id ? "selected" : ""} onClick={() => openTab(item.id)}><Icon name={item.icon} size={21}/><span>{item.id === "home" ? ui("หน้าแรก", "Home") : item.label}</span></button>)}
         {tab !== "travel" && tab !== "vault" && <button type="button" className="mobile-add" onClick={openCurrentForm} aria-label={tab === "calendar" ? ui("เพิ่มการแจ้งเตือน", "Add reminder") : copy.add}><span>＋</span><b>{ui("เพิ่ม", "Add")}</b></button>}
@@ -1427,7 +1411,6 @@ export default function Home() {
     {deleteOccurrenceTarget && <ConfirmationPopup labelledBy="delete-occurrence-title" onCancel={() => setDeleteOccurrenceTarget(null)}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-occurrence-title"><span className="confirm-icon"><Icon name="trash" size={22}/></span><h2 id="delete-occurrence-title">{ui("ลบนัดหมายที่ทำซ้ำ?", "Delete recurring appointment?")}</h2><p><strong>“{deleteOccurrenceTarget.entry.name}”</strong> · {dateLabel(deleteOccurrenceTarget.date, language)}</p><div className="confirm-actions"><button type="button" className="secondary-button" onClick={() => setDeleteOccurrenceTarget(null)}>{ui("ยกเลิก", "Cancel")}</button><button type="button" className="danger-button" onClick={confirmRemoveOccurrence}>{ui("ลบเฉพาะครั้งนี้", "This occurrence")}</button><button type="button" className="danger-button" onClick={() => { const entry = deleteOccurrenceTarget.entry; setDeleteOccurrenceTarget(null); removeEntry(entry); }}>{ui("ลบทั้งชุด", "Entire series")}</button></div></section></ConfirmationPopup>}
     {deletePastAppointmentsOpen && <ConfirmationPopup labelledBy="delete-past-title" onCancel={() => setDeletePastAppointmentsOpen(false)}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-past-title" aria-describedby="delete-past-description"><span className="confirm-icon"><Icon name="trash" size={22}/></span><h2 id="delete-past-title">{ui("ลบนัดหมายที่ผ่านไปแล้ว?", "Delete past appointments?")}</h2><p id="delete-past-description">{ui(`จะลบนัดหมายที่ผ่านไปแล้ว ${pastAppointmentCount} รายการ การลบนี้ไม่สามารถย้อนกลับได้`, `This will delete ${pastAppointmentCount} past appointments. This cannot be undone.`)}</p><div className="confirm-actions"><button type="button" className="secondary-button" onClick={() => setDeletePastAppointmentsOpen(false)}>{ui("ยกเลิก", "Cancel")}</button><button type="button" className="danger-button" disabled={pastAppointmentCount === 0} onClick={confirmRemovePastAppointments}><Icon name="trash" size={16}/>{ui("ลบทั้งหมด", "Delete all")}</button></div></section></ConfirmationPopup>}
     {photoDeleteTarget && <ConfirmationPopup labelledBy="photo-delete-title" onCancel={() => setPhotoDeleteTarget(null)}><section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="photo-delete-title" aria-describedby="photo-delete-description"><span className="confirm-icon"><Icon name="trash" size={22}/></span><h2 id="photo-delete-title">{photoDeleteTarget.kind === "attachment" ? ui("ลบไฟล์แนบนี้?", "Delete this attachment?") : ui("ลบรูปภาพนี้?", "Delete this photo?")}</h2><p id="photo-delete-description">{ui("ไฟล์ที่ลบจากรายการจะถูกลบจากที่เก็บออนไลน์หลังบันทึกข้อมูล", "The file will also be removed from online storage after the record is saved.")}</p><div className="confirm-actions"><button type="button" className="secondary-button" onClick={() => setPhotoDeleteTarget(null)}>{ui("ยกเลิก", "Cancel")}</button><button type="button" className="danger-button" onClick={confirmPhotoRemove}><Icon name="trash" size={16}/>{ui("ลบไฟล์", "Delete file")}</button></div></section></ConfirmationPopup>}
-    {notice && <div className="toast"><span><Icon name="check" size={15}/></span>{notice}</div>}
   </main>;
 }
 
